@@ -1,725 +1,983 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Auditor de Preços - Cloud Sync</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Auditor de Preços PRO</title>
 
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- FontAwesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
-  <!-- HTML5 QR / Barcode Scanner -->
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- HTML5 QR / Barcode Scanner -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
-  <!-- SheetJS -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- SheetJS -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
-  <!-- Fonte Inter -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Fonte Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: { sans: ['Inter', 'sans-serif'] }
-        }
-      }
-    };
-  </script>
-
-  <style>
-    body { -webkit-tap-highlight-color: transparent; user-select: none; }
-    input, textarea, select { user-select: auto; }
-    .custom-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
-    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-    .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
-    #reader video { border-radius: 0.75rem; object-fit: cover; max-height: 220px; width: 100%; }
-  </style>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased overflow-x-hidden">
-
-  <!-- Toast Notificações -->
-  <div id="toast-container" class="fixed top-3 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 w-11/12 max-w-md pointer-events-none"></div>
-
-  <!-- Cabeçalho -->
-  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-3">
-    <div class="max-w-lg mx-auto flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/20 flex-shrink-0">
-          <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
-        </div>
-        <div class="min-w-0">
-          <h1 class="font-extrabold text-sm sm:text-base text-white truncate leading-tight">
-            Auditor Nuvem
-          </h1>
-          <p id="cloud-status" class="text-[11px] text-amber-400 font-bold truncate flex items-center gap-1">
-            <i class="fa-solid fa-circle-notch fa-spin"></i> Conectando...
-          </p>
-        </div>
-      </div>
-      <button onclick="toggleAudio()" class="w-9 h-9 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center justify-center transition active:scale-95">
-        <i id="sound-icon" class="fa-solid fa-volume-high text-xs text-blue-400"></i>
-      </button>
-    </div>
-  </header>
-
-  <!-- Navegação -->
-  <nav class="sticky top-[61px] z-20 bg-slate-900 border-b border-slate-800 px-2">
-    <div class="max-w-lg mx-auto grid grid-cols-3 text-xs sm:text-sm font-bold">
-      <button onclick="switchTab('tab-audit')" id="nav-audit" class="py-3 border-b-2 border-blue-500 text-blue-400 flex items-center justify-center gap-1.5 transition">
-        <i class="fa-solid fa-magnifying-glass"></i><span>Conferir</span>
-      </button>
-      <button onclick="switchTab('tab-dashboard')" id="nav-dashboard" class="py-3 border-b-2 border-transparent text-slate-400 flex items-center justify-center gap-1.5 transition">
-        <i class="fa-solid fa-tags"></i><span>Etiquetas</span>
-        <span id="badge-divergent-count" class="hidden px-1.5 py-0.5 text-[10px] bg-rose-600 text-white rounded-full font-black leading-none">0</span>
-      </button>
-      <button onclick="switchTab('tab-catalog')" id="nav-catalog" class="py-3 border-b-2 border-transparent text-slate-400 flex items-center justify-center gap-1.5 transition">
-        <i class="fa-solid fa-file-spreadsheet"></i><span>Planilha</span>
-      </button>
-    </div>
-  </nav>
-
-  <!-- Conteúdo Principal -->
-  <main class="flex-1 w-full max-w-lg mx-auto p-3 sm:p-4 pb-24">
-
-    <!-- ========================================== -->
-    <!-- ABA 1: CONFERIR PREÇOS                     -->
-    <!-- ========================================== -->
-    <section id="tab-audit" class="space-y-4">
-      <div class="bg-slate-900 rounded-2xl p-3.5 border border-slate-800 shadow-lg relative">
-        <div class="flex items-center justify-between mb-2">
-          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <i class="fa-solid fa-keyboard text-blue-400"></i> Código ou Nome
-          </label>
-        </div>
-        <form onsubmit="handleCodeSubmit(event)" class="flex items-center gap-2">
-          <div class="relative flex-1 min-w-0">
-            <input type="text" id="code-input" oninput="handleSearchInput(event)" placeholder="Ex: 102045" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 rounded-xl pl-3.5 pr-9 py-3 text-sm font-mono font-bold text-white placeholder-slate-500 outline-none transition">
-            <button type="button" id="btn-clear-input" onclick="clearSearchInput()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center text-xs"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <button type="button" onclick="toggleCameraScanner()" class="h-12 w-12 rounded-xl bg-slate-800 text-blue-400 border border-slate-700 flex items-center justify-center flex-shrink-0 transition active:scale-95"><i class="fa-solid fa-camera text-lg"></i></button>
-          <button type="submit" class="h-12 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center justify-center flex-shrink-0 transition active:scale-95"><i class="fa-solid fa-magnifying-glass"></i></button>
-        </form>
-        
-        <div id="autocomplete-box" class="hidden mt-2 pt-2 border-t border-slate-800">
-          <div id="autocomplete-list" class="space-y-1.5 max-h-60 overflow-y-auto custom-scroll pr-1"></div>
-        </div>
-
-        <div id="scanner-wrapper" class="hidden mt-3 rounded-xl overflow-hidden border border-blue-500/60 bg-black">
-          <div id="reader" class="w-full"></div>
-          <div class="px-3 py-2 bg-slate-900 flex items-center justify-between text-xs">
-            <span class="text-slate-300 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>Lendo código...</span>
-            <button type="button" onclick="stopCameraScanner()" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold text-[11px]">Fechar</button>
-          </div>
-        </div>
-      </div>
-
-      <div id="product-card-container" class="hidden"></div>
-
-      <div id="audit-empty-state" class="bg-slate-900 rounded-2xl p-5 border border-slate-800 text-center space-y-3">
-        <div class="w-14 h-14 rounded-2xl bg-blue-950/80 border border-blue-800/80 text-blue-400 flex items-center justify-center mx-auto text-2xl">
-          <i class="fa-solid fa-cloud-bolt"></i>
-        </div>
-        <div>
-          <h2 class="font-extrabold text-base text-white">Auditoria Conectada</h2>
-          <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Sincronização em tempo real. Digite o código sem precisar de pontos ou zeros à esquerda.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ========================================== -->
-    <!-- ABA 2: ETIQUETAS                           -->
-    <!-- ========================================== -->
-    <section id="tab-dashboard" class="hidden space-y-4">
-      <div class="bg-slate-900 rounded-2xl p-3.5 border border-slate-800 space-y-3">
-        <div class="flex items-center justify-between">
-          <h3 class="text-sm font-extrabold text-white flex items-center gap-2"><i class="fa-solid fa-tags text-rose-400"></i> Etiquetas Divergentes</h3>
-          <button onclick="exportCSV()" class="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg"><i class="fa-solid fa-file-csv"></i> Baixar CSV</button>
-        </div>
-        <div id="audit-list" class="divide-y divide-slate-800/80 max-h-[60vh] overflow-y-auto custom-scroll"></div>
-      </div>
-    </section>
-
-    <!-- ========================================== -->
-    <!-- ABA 3: PLANILHA E UPLOAD                   -->
-    <!-- ========================================== -->
-    <section id="tab-catalog" class="hidden space-y-4">
-      <div class="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-3">
-        <div>
-          <h2 class="font-extrabold text-sm text-white flex items-center gap-2"><i class="fa-solid fa-file-excel text-emerald-400"></i> Importar Planilha</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Detecta automaticamente Tarja Roxa, Verde ou Azul. Salva na nuvem para todos os dispositivos.</p>
-        </div>
-
-        <div id="drop-zone" onclick="document.getElementById('file-input').click()" class="border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-2xl p-5 text-center cursor-pointer bg-slate-950/60 transition">
-          <input type="file" id="file-input" accept=".ods,.xlsx,.xls,.csv" onchange="handleFileUpload(event)" class="hidden">
-          <div class="w-11 h-11 rounded-2xl bg-emerald-950 border border-emerald-800 text-emerald-400 flex items-center justify-center mx-auto mb-2 text-lg"><i class="fa-solid fa-cloud-arrow-up"></i></div>
-          <p class="text-xs font-bold text-white">Toque para selecionar planilha</p>
-        </div>
-
-        <div id="upload-progress" class="hidden space-y-2">
-          <div class="flex justify-between text-[10px] font-bold text-slate-400">
-            <span id="upload-status-text">Lendo arquivo...</span>
-            <span id="upload-pct">0%</span>
-          </div>
-          <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-            <div id="upload-bar" class="bg-emerald-500 h-2 rounded-full w-0 transition-all duration-300"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-slate-900 rounded-2xl p-4 border border-slate-800">
-        <h3 class="text-xs font-extrabold text-white mb-2">Base de Produtos na Nuvem</h3>
-        <p class="text-xs text-slate-400 mb-3">Total: <b id="cloud-total-count" class="text-blue-400">0</b> itens sincronizados.</p>
-        <button onclick="clearCloudDatabase()" class="w-full py-2.5 rounded-xl border border-rose-800 text-rose-400 text-xs font-bold hover:bg-rose-950/50 transition">Limpar Banco de Dados</button>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- ======================================================== -->
-  <!-- MODAL: LOCAL DA ETIQUETA                                 -->
-  <!-- ======================================================== -->
-  <div id="location-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 rounded-3xl max-w-sm w-full p-5 border border-slate-800 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <h3 class="font-extrabold text-sm text-white flex items-center gap-2"><i class="fa-solid fa-location-dot text-rose-400"></i> Onde está o item?</h3>
-        <button type="button" onclick="closeLocationModal()" class="text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark"></i></button>
-      </div>
-      <div>
-        <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Locais rápidos:</span>
-        <div class="grid grid-cols-2 gap-1.5">
-          <button onclick="confirmWrongPrice('Gôndola Principal')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-layer-group text-rose-400 mr-1.5"></i>Gôndola Principal</button>
-          <button onclick="confirmWrongPrice('Ponta de Gôndola')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-star text-amber-400 mr-1.5"></i>Ponta de Gôndola</button>
-          <button onclick="confirmWrongPrice('Ilha Central')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-cubes text-blue-400 mr-1.5"></i>Ilha Central</button>
-          <button onclick="confirmWrongPrice('Frente de Caixa')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-cash-register text-emerald-400 mr-1.5"></i>Frente de Caixa</button>
-          <button onclick="confirmWrongPrice('Pátio / Depósito')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-warehouse text-teal-400 mr-1.5"></i>Pátio / Depósito</button>
-        </div>
-      </div>
-      <div>
-        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Ou digite o local:</label>
-        <input type="text" id="custom-location-input" placeholder="Ex: Corredor 3" class="w-full bg-slate-950 border border-slate-700 focus:border-rose-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
-      </div>
-      <div class="flex gap-2 pt-1">
-        <button onclick="closeLocationModal()" class="flex-1 py-3 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs">Cancelar</button>
-        <button onclick="confirmWrongPriceCustom()" class="flex-1 py-3 rounded-xl bg-rose-600 text-white font-black text-xs shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5"><i class="fa-solid fa-check"></i> Salvar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Firebase Scripts -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    // Globals
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'auditor-nuvem-app';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-      projectId: "dummy-project",
-      apiKey: "dummy-key",
-      authDomain: "dummy-domain"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
-    let currentUser = null;
-    let globalProducts = {}; // Memory state
-    window.db = db; // Expose for external functions
-
-    // Utility: Toast & Audio
-    window.showToast = (msg, type = 'info') => {
-      const container = document.getElementById('toast-container');
-      const el = document.createElement('div');
-      const styles = {
-        success: 'bg-emerald-600 text-white border-emerald-500',
-        warning: 'bg-amber-600 text-white border-amber-500',
-        error: 'bg-rose-600 text-white border-rose-500',
-        info: 'bg-slate-800 text-white border-slate-700'
-      }[type];
-      el.className = `${styles} border px-4 py-3 rounded-2xl shadow-xl text-xs font-bold flex items-center gap-2`;
-      el.innerHTML = `<i class="fa-solid fa-circle-info"></i><span>${msg}</span>`;
-      container.appendChild(el);
-      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2800);
-    };
-
-    let audioEnabled = true;
-    window.toggleAudio = () => {
-      audioEnabled = !audioEnabled;
-      document.getElementById('sound-icon').className = audioEnabled ? 'fa-solid fa-volume-high text-xs text-blue-400' : 'fa-solid fa-volume-xmark text-xs text-slate-500';
-    };
-    window.playTone = (type) => {
-      if (!audioEnabled) return;
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        const now = ctx.currentTime;
-        if (type === 'beep') {
-          osc.frequency.setValueAtTime(1600, now);
-          gain.gain.setValueAtTime(0.1, now);
-          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-          osc.start(now); osc.stop(now + 0.1);
-        } else if (type === 'warning') {
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(300, now);
-          osc.frequency.setValueAtTime(200, now + 0.2);
-          gain.gain.setValueAtTime(0.2, now);
-          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-          osc.start(now); osc.stop(now + 0.3);
-        }
-      } catch(e) {}
-    };
-
-    // Firebase Auth Setup
-    async function initAuth() {
-      try {
-        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        if (token) {
-          await signInWithCustomToken(auth, token);
-        } else {
-          await signInAnonymously(auth);
-        }
-        currentUser = auth.currentUser;
-        setupRealtimeSync();
-        document.getElementById('cloud-status').innerHTML = '<i class="fa-solid fa-cloud text-emerald-400"></i> Online';
-        document.getElementById('cloud-status').classList.replace('text-amber-400', 'text-emerald-400');
-      } catch (err) {
-        document.getElementById('cloud-status').innerHTML = '<i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Erro DB';
-      }
-    }
-
-    // Real-time Database Sync (Firestore)
-    function setupRealtimeSync() {
-      if (!currentUser) return;
-      const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
-      
-      onSnapshot(productsRef, (snapshot) => {
-        globalProducts = {};
-        snapshot.forEach(doc => {
-          globalProducts[doc.id] = doc.data();
-        });
-        updateDashboardUI();
-        document.getElementById('cloud-total-count').textContent = Object.keys(globalProducts).length;
-      }, (err) => {
-        console.error("Erro Sync:", err);
-      });
-    }
-
-    // Window exposure for UI buttons
-    window.handleFileUpload = async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      if (!currentUser) { window.showToast('Aguarde conexão com a nuvem.', 'warning'); return; }
-
-      document.getElementById('upload-progress').classList.remove('hidden');
-      document.getElementById('upload-status-text').textContent = 'Analisando matriz da planilha...';
-      
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        
-        const extracted = parseSpreadsheetRows(rows);
-        if (extracted.length === 0) {
-          window.showToast('Nenhum produto encontrado. Verifique as colunas.', 'error');
-          document.getElementById('upload-progress').classList.add('hidden');
-          return;
-        }
-
-        await uploadToFirestore(extracted);
-      };
-      reader.readAsArrayBuffer(file);
-    };
-
-    function parseSpreadsheetRows(matrix) {
-      const products = [];
-      for (let i = 0; i < matrix.length; i++) {
-        const row = matrix[i];
-        const rowString = row.join(' ').toLowerCase();
-        
-        let code = '', name = '', price = 0, promo = 'AZUL';
-
-        // Lógica de Promoção exata como requisitado
-        if (rowString.includes('roxa') || rowString.includes('especial')) {
-          promo = 'ROXA';
-        } else if (rowString.includes('verde') || rowString.includes('promo')) {
-          promo = 'VERDE';
-        }
-
-        // Heurística básica de extração
-        for (let j = 0; j < row.length; j++) {
-          let cell = String(row[j]).trim();
-          if (!cell) continue;
-
-          // Extrair Código (Números com possíveis pontos)
-          if (!code && /^[\d\.\-]+$/.test(cell) && cell.length > 2 && cell.replace(/\D/g, '').length > 2) {
-            code = cell;
-          } 
-          // Extrair Nome (Textos grandes que não são apenas moedas ou cabeçalhos)
-          else if (!name && cell.length > 5 && /[a-zA-Z]/.test(cell) && !/^(código|descrição|produto|preço)/i.test(cell)) {
-            name = cell;
-          }
-          // Extrair Preço (Números flutuantes ou moedas R$)
-          else if (!price) {
-            let cleanNum = cell.replace(/[R$\s]/gi, '').replace(/\./g, '').replace(',', '.');
-            if (!isNaN(parseFloat(cleanNum)) && parseFloat(cleanNum) > 0 && parseFloat(cleanNum) < 100000) {
-              price = parseFloat(cleanNum);
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        brand: {
+                            blue: '#0f172a',    // slate-900
+                            light: '#1e293b',   // slate-800
+                            orange: '#f97316',  // orange-500
+                            orangeHover: '#ea580c' // orange-600
+                        }
+                    }
+                }
             }
-          }
-        }
+        };
+    </script>
 
-        if (code && name) {
-          const normCode = String(code).replace(/[\.\-\s]/g, '').replace(/^0+/, '');
-          if (normCode) {
-            products.push({
-              id: normCode,
-              originalCode: code,
-              name: name,
-              price: price || 0,
-              promoTag: promo,
-              status: 'Pendente',
-              location: null
-            });
-          }
-        }
-      }
-      return products;
-    }
-
-    async function uploadToFirestore(productsArr) {
-      const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
-      const total = productsArr.length;
-      let count = 0;
-      
-      document.getElementById('upload-status-text').textContent = 'Sincronizando com a Nuvem...';
-      
-      // Batch writes in chunks of 450 (Firestore limit is 500)
-      const chunks = [];
-      for (let i = 0; i < total; i += 450) {
-        chunks.push(productsArr.slice(i, i + 450));
-      }
-
-      try {
-        for (const chunk of chunks) {
-          const batch = writeBatch(db);
-          chunk.forEach(p => {
-            const docRef = doc(collRef, p.id);
-            batch.set(docRef, p);
-          });
-          await batch.commit();
-          count += chunk.length;
-          
-          const pct = Math.round((count / total) * 100);
-          document.getElementById('upload-pct').textContent = `${pct}%`;
-          document.getElementById('upload-bar').style.width = `${pct}%`;
-        }
-        window.showToast(`${total} produtos salvos na nuvem!`, 'success');
-      } catch(err) {
-        window.showToast('Erro ao salvar na nuvem.', 'error');
-      }
-      
-      setTimeout(() => { document.getElementById('upload-progress').classList.add('hidden'); }, 1500);
-      document.getElementById('file-input').value = '';
-    }
-
-    window.clearCloudDatabase = async () => {
-      if (!currentUser) return;
-      const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
-      try {
-        const snap = await getDocs(collRef);
-        const batch = writeBatch(db);
-        snap.docs.forEach(d => { batch.delete(d.ref); });
-        await batch.commit();
-        window.showToast('Base de dados limpa com sucesso.', 'success');
-      } catch(e) {
-        window.showToast('Erro ao limpar base.', 'error');
-      }
-    };
-
-    // Auditoria (Preço Correto / Errado) Update na Nuvem
-    window.updateProductStatus = async (productId, status, location = null) => {
-      if (!currentUser || !globalProducts[productId]) return;
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', productId);
-      try {
-        await setDoc(docRef, { 
-          status: status, 
-          location: location,
-          lastAudit: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-        }, { merge: true });
+    <style>
+        body { -webkit-tap-highlight-color: transparent; background-color: #0f172a; color: #f8fafc; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
         
-        if (status === 'Correto') {
-          window.playTone('beep');
-          window.showToast('Marcado como Correto', 'success');
-        } else {
-          window.playTone('warning');
-          window.showToast(`Divergência salva em: ${location}`, 'warning');
-        }
-      } catch(e) {
-        window.showToast('Erro de sincronização.', 'error');
-      }
-    };
+        /* Modals & Toasts Animations */
+        @keyframes slideInUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-slide-up { animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+        
+        /* Toast */
+        #toast-container { z-index: 9999; }
+        .toast { transition: all 0.3s ease; }
+        .toast.hide { opacity: 0; transform: translateY(-20px); }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col overflow-x-hidden">
 
-    // Export Dashboard Logic
-    window.updateDashboardUI = () => {
-      const listEl = document.getElementById('audit-list');
-      const badge = document.getElementById('badge-divergent-count');
-      
-      const divergents = Object.values(globalProducts).filter(p => p.status === 'Divergente');
-      
-      if (divergents.length > 0) {
-        badge.textContent = divergents.length;
-        badge.classList.remove('hidden');
-      } else {
-        badge.classList.add('hidden');
-      }
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 flex flex-col gap-2 w-11/12 max-w-md pointer-events-none"></div>
 
-      if (divergents.length === 0) {
-        listEl.innerHTML = `<div class="p-5 text-center text-xs text-slate-500">Nenhuma divergência registrada.</div>`;
-        return;
-      }
-
-      listEl.innerHTML = divergents.map(p => `
-        <div class="p-3 hover:bg-slate-800/60 flex items-center justify-between gap-3">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[10px] text-blue-400">${p.originalCode}</span>
-              <span class="px-2 py-0.5 rounded-full bg-rose-950 border border-rose-800 text-rose-300 font-bold text-[10px]"><i class="fa-solid fa-location-dot mr-1"></i>${p.location}</span>
+    <!-- Header / Navbar -->
+    <header class="sticky top-0 z-40 bg-brand-blue border-b border-slate-800 shadow-md">
+        <div class="max-w-xl mx-auto">
+            <div class="flex items-center justify-center p-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-orange to-red-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/20">
+                        <i class="fa-solid fa-barcode text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-extrabold text-lg text-white leading-tight">Auditor<span class="text-brand-orange">PRO</span></h1>
+                        <p class="text-[10px] text-slate-400 font-medium uppercase tracking-widest" id="header-db-status">DB Offline</p>
+                    </div>
+                </div>
             </div>
-            <p class="text-xs font-bold text-white truncate">${p.name}</p>
-          </div>
+            <!-- Tabs -->
+            <nav class="flex px-2 pb-2 gap-2 overflow-x-auto hide-scroll text-sm font-bold">
+                <button onclick="switchTab('conferencia')" id="tab-btn-conferencia" class="flex-1 py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all bg-brand-orange text-white shadow-md">
+                    <i class="fa-solid fa-magnifying-glass"></i> Conferência
+                </button>
+                <button onclick="switchTab('divergencias')" id="tab-btn-divergencias" class="flex-1 py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all bg-brand-light text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Divergências
+                    <span id="div-badge" class="hidden bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full ml-1">0</span>
+                </button>
+                <button onclick="switchTab('base')" id="tab-btn-base" class="flex-1 py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all bg-brand-light text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-database"></i> Base
+                </button>
+            </nav>
         </div>
-      `).join('');
-    };
+    </header>
 
-    window.exportCSV = () => {
-      const divergents = Object.values(globalProducts).filter(p => p.status === 'Divergente');
-      if (divergents.length === 0) {
-        window.showToast('Nenhuma divergência para exportar.', 'warning');
-        return;
-      }
-      let csv = "Codigo;Produto;Preco_Base;Local;Hora\n";
-      divergents.forEach(p => {
-        csv += `"${p.originalCode}";"${p.name}";${p.price.toFixed(2).replace('.', ',')};"${p.location}";${p.lastAudit || ''}\n`;
-      });
-      const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `divergencias_${new Date().getTime()}.csv`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    };
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-xl mx-auto p-4 pb-20">
 
-    // Init Logic
-    initAuth();
-  </script>
+        <!-- ========================================== -->
+        <!-- TAB 1: CONFERÊNCIA                         -->
+        <!-- ========================================== -->
+        <section id="tab-conferencia" class="space-y-6">
+            <!-- Search Bar -->
+            <div class="bg-brand-light rounded-2xl p-4 shadow-lg border border-slate-700/50">
+                <form onsubmit="handleSearch(event)" class="flex flex-col gap-3">
+                    <label class="text-xs font-bold uppercase tracking-widest text-slate-400">Bipar ou Digitar Código</label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input type="text" id="search-input" placeholder="Cód ou Barras..." autocomplete="off" class="w-full bg-brand-blue border border-slate-600 focus:border-brand-orange focus:ring-1 focus:ring-brand-orange rounded-xl pl-4 pr-10 py-3.5 text-base font-bold text-white placeholder-slate-500 outline-none transition">
+                            <button type="button" onclick="document.getElementById('search-input').value=''" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                        <button type="button" onclick="toggleScanner()" class="w-14 rounded-xl bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center transition shadow-md">
+                            <i class="fa-solid fa-qrcode text-xl"></i>
+                        </button>
+                        <button type="submit" class="w-14 rounded-xl bg-brand-orange hover:bg-brand-orangeHover text-white flex items-center justify-center transition shadow-md shadow-orange-500/20">
+                            <i class="fa-solid fa-arrow-right text-xl"></i>
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Scanner Container -->
+                <div id="reader-container" class="hidden mt-4 rounded-xl overflow-hidden border border-slate-600">
+                    <div id="reader"></div>
+                    <button onclick="toggleScanner()" class="w-full py-2 bg-slate-700 text-sm font-bold text-slate-300">Fechar Câmera</button>
+                </div>
+            </div>
 
-  <!-- Script UI Principal -->
-  <script>
-    let currentAuditProductId = null;
-    let html5QrScanner = null;
+            <!-- Product Display Card -->
+            <div id="product-display" class="hidden flex-col gap-4 animate-slide-up">
+                <div class="bg-brand-light rounded-2xl p-5 shadow-lg border border-slate-700/50 flex flex-col gap-4">
+                    
+                    <div class="flex flex-col">
+                        <span id="prod-code" class="text-xs font-bold text-slate-400 font-mono tracking-widest"></span>
+                        <h2 id="prod-name" class="text-lg font-black text-white leading-tight mt-1"></h2>
+                    </div>
 
-    // Normalização Inteligente
-    function normalizeQuery(code) {
-      return String(code).replace(/[\.\-\s]/g, '').replace(/^0+/, '');
-    }
+                    <!-- Warning Tags -->
+                    <div id="promo-warning-verde" class="hidden bg-green-500/20 border border-green-500/50 rounded-xl p-3 flex items-start gap-3">
+                        <i class="fa-solid fa-tags text-green-400 mt-0.5"></i>
+                        <p class="text-xs font-black text-green-400 uppercase leading-snug">Colocar Etiqueta Promoção Branca (Etiqueta 48) Junto do Card</p>
+                    </div>
+                    <div id="promo-warning-roxa" class="hidden bg-purple-500/20 border border-purple-500/50 rounded-xl p-3 flex items-start gap-3">
+                        <i class="fa-solid fa-tags text-purple-400 mt-0.5"></i>
+                        <p class="text-xs font-black text-purple-400 uppercase leading-snug">Colocar Etiqueta Promoção Verde (Etiqueta 48) Junto do Card</p>
+                    </div>
 
-    // Formatador
-    function formatMoney(val) {
-      return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    }
+                    <!-- Price Cards -->
+                    <div class="grid grid-cols-1 gap-3">
+                        <!-- PIX / Dinheiro -->
+                        <div class="bg-emerald-900/40 border border-emerald-500/30 rounded-xl p-4 flex flex-col justify-center relative overflow-hidden">
+                            <div class="absolute -right-4 -top-4 opacity-10"><i class="fa-solid fa-money-bill-wave text-6xl text-emerald-500"></i></div>
+                            <span class="text-[10px] font-black uppercase text-emerald-400 tracking-wider">À Vista no PIX / Dinheiro</span>
+                            <div class="text-3xl font-black text-white mt-1" id="prod-price-pix"></div>
+                        </div>
 
-    // Tabs
-    function switchTab(tabId) {
-      ['tab-audit', 'tab-dashboard', 'tab-catalog'].forEach(id => document.getElementById(id).classList.add('hidden'));
-      ['nav-audit', 'nav-dashboard', 'nav-catalog'].forEach(id => {
-        document.getElementById(id).classList.remove('border-blue-500', 'text-blue-400');
-        document.getElementById(id).classList.add('border-transparent', 'text-slate-400');
-      });
-      document.getElementById(tabId).classList.remove('hidden');
-      const activeNav = { 'tab-audit': 'nav-audit', 'tab-dashboard': 'nav-dashboard', 'tab-catalog': 'nav-catalog' }[tabId];
-      document.getElementById(activeNav).classList.add('border-blue-500', 'text-blue-400');
-      document.getElementById(activeNav).classList.remove('border-transparent', 'text-slate-400');
-    }
+                        <!-- Cartão 1+5x -->
+                        <div class="bg-blue-900/40 border border-blue-500/30 rounded-xl p-4 flex flex-col justify-center relative overflow-hidden">
+                            <div class="absolute -right-4 -top-4 opacity-10"><i class="fa-solid fa-credit-card text-6xl text-blue-500"></i></div>
+                            <span class="text-[10px] font-black uppercase text-blue-400 tracking-wider">No Cartão: 1 + 5x (Total)</span>
+                            <div class="text-2xl font-black text-white mt-1" id="prod-price-card"></div>
+                            <span class="text-xs font-medium text-blue-300 mt-1" id="prod-price-installments"></span>
+                        </div>
+                    </div>
+                </div>
 
-    // Busca
-    function handleSearchInput(e) {
-      const q = e.target.value.trim();
-      if (!q) {
-        document.getElementById('btn-clear-input').classList.add('hidden');
-        document.getElementById('autocomplete-box').classList.add('hidden');
-        return;
-      }
-      document.getElementById('btn-clear-input').classList.remove('hidden');
-      
-      const normQ = normalizeQuery(q);
-      const allProducts = Object.values(window.db ? globalProducts : {});
-      
-      const matches = allProducts.filter(p => p.id.includes(normQ) || p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
-      
-      if (matches.length > 0) {
-        document.getElementById('autocomplete-box').classList.remove('hidden');
-        document.getElementById('autocomplete-list').innerHTML = matches.map(p => `
-          <button type="button" onclick="selectProduct('${p.id}')" class="w-full text-left p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-blue-500/50 flex flex-col gap-1 transition">
-            <div class="flex items-center gap-1.5"><span class="px-1.5 py-0.5 bg-blue-950 text-blue-400 font-mono text-[10px] rounded">${p.originalCode}</span><span class="text-xs font-bold text-white truncate">${p.name}</span></div>
-          </button>
-        `).join('');
-      } else {
-        document.getElementById('autocomplete-box').classList.add('hidden');
-      }
-    }
-
-    function clearSearchInput() {
-      document.getElementById('code-input').value = '';
-      document.getElementById('btn-clear-input').classList.add('hidden');
-      document.getElementById('autocomplete-box').classList.add('hidden');
-      document.getElementById('code-input').focus();
-    }
-
-    function handleCodeSubmit(e) {
-      if (e) e.preventDefault();
-      const q = document.getElementById('code-input').value.trim();
-      const normQ = normalizeQuery(q);
-      
-      if (globalProducts[normQ]) {
-        selectProduct(normQ);
-      } else {
-        const matches = Object.values(globalProducts).filter(p => p.id.includes(normQ));
-        if (matches.length === 1) {
-          selectProduct(matches[0].id);
-        } else {
-          window.showToast('Código não encontrado.', 'error');
-        }
-      }
-    }
-
-    function selectProduct(id) {
-      const p = globalProducts[id];
-      if (!p) return;
-      currentAuditProductId = id;
-      
-      document.getElementById('autocomplete-box').classList.add('hidden');
-      document.getElementById('audit-empty-state').classList.add('hidden');
-      
-      const container = document.getElementById('product-card-container');
-      container.classList.remove('hidden');
-
-      // Calcular preços
-      const basePrice = p.price;
-      const instPrice = basePrice / 6;
-
-      // Lógica de Tarjas (Promocionais) Exatamente como requisitado
-      let promoHtml = '';
-      let borderStyle = 'border-slate-800';
-      
-      if (p.promoTag === 'ROXA') {
-        borderStyle = 'border-purple-500 shadow-purple-500/20';
-        promoHtml = `
-          <div class="p-3 bg-purple-950/40 border border-purple-500/60 rounded-xl mb-3">
-            <span class="text-[11px] font-black text-purple-300 block mb-1 uppercase"><i class="fa-solid fa-star"></i> Promoção Especial (Tarja Roxa)</span>
-            <p class="text-xs font-bold text-purple-100">(COLOCAR ETIQUETA PROMOÇÃO VERDE (ETIQUETA 48) JUNTO DO CARD (se houver))</p>
-          </div>
-        `;
-      } else if (p.promoTag === 'VERDE') {
-        borderStyle = 'border-emerald-500 shadow-emerald-500/20';
-        promoHtml = `
-          <div class="p-3 bg-emerald-950/40 border border-emerald-500/60 rounded-xl mb-3">
-            <span class="text-[11px] font-black text-emerald-400 block mb-1 uppercase"><i class="fa-solid fa-tag"></i> Promoção (Tarja Verde)</span>
-            <p class="text-xs font-bold text-emerald-100">(COLOCAR ETIQUETA PROMOÇÃO BRANCA (ETIQUETA 48) JUNTO DO CARD (se houver))</p>
-          </div>
-        `;
-      }
-
-      container.innerHTML = `
-        <div class="bg-slate-900 rounded-3xl p-4 sm:p-5 border ${borderStyle} shadow-lg space-y-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="px-2.5 py-1 rounded-xl bg-blue-950 text-blue-400 border border-blue-800 font-mono font-black text-xs">Cód: ${p.originalCode}</span>
-          </div>
-          
-          <h2 class="text-base font-black text-white leading-snug break-words mb-3">${p.name}</h2>
-          
-          ${promoHtml}
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <!-- PIX -->
-            <div class="rounded-2xl p-4 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700">
-              <span class="text-[11px] font-black uppercase text-emerald-400 flex items-center gap-1.5 mb-1"><i class="fa-solid fa-money-bill-wave"></i> À Vista no PIX / Dinheiro</span>
-              <div class="text-2xl font-black font-mono text-white">${formatMoney(basePrice)}</div>
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="markCorrect()" class="py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-600/20 transition active:scale-95 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-check"></i> Correto
+                    </button>
+                    <button onclick="openLocationModal()" class="py-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm uppercase tracking-widest shadow-lg shadow-rose-600/20 transition active:scale-95 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-xmark"></i> Errado
+                    </button>
+                </div>
             </div>
             
-            <!-- Cartão 1+5x -->
-            <div class="rounded-2xl p-4 bg-gradient-to-br from-blue-950/50 to-slate-900 border border-blue-900/50">
-              <span class="text-[11px] font-black uppercase text-blue-400 flex items-center gap-1.5 mb-1"><i class="fa-solid fa-credit-card"></i> No Cartão 1 + 5x</span>
-              <div class="text-lg font-black font-mono text-blue-200">Entrada 1x de ${formatMoney(instPrice)}<br>+ 5x de ${formatMoney(instPrice)}</div>
+            <div id="no-product-msg" class="hidden text-center py-10 opacity-50">
+                <i class="fa-solid fa-box-open text-4xl mb-3"></i>
+                <p class="text-sm font-bold">Produto não encontrado na base.</p>
             </div>
-          </div>
+        </section>
 
-          <div class="grid grid-cols-2 gap-2 mt-4">
-            <button onclick="window.updateProductStatus('${p.id}', 'Correto'); resetSearch();" class="py-3.5 rounded-2xl bg-emerald-600 text-white font-black text-xs flex items-center justify-center gap-2 active:scale-95 transition"><i class="fa-solid fa-check"></i> Preço Correto</button>
-            <button onclick="openLocationModal()" class="py-3.5 rounded-2xl bg-rose-600 text-white font-black text-xs flex items-center justify-center gap-2 active:scale-95 transition"><i class="fa-solid fa-xmark"></i> Preço Errado</button>
-          </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: DIVERGÊNCIAS                        -->
+        <!-- ========================================== -->
+        <section id="tab-divergencias" class="hidden space-y-4">
+            <div class="flex justify-between items-center bg-brand-light p-3 rounded-xl border border-slate-700">
+                <button onclick="exportCSV()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-bold text-white transition flex items-center gap-2">
+                    <i class="fa-solid fa-download"></i> CSV
+                </button>
+                <button onclick="clearDivergences()" class="px-4 py-2 bg-rose-900/50 hover:bg-rose-600 border border-rose-500/50 rounded-lg text-sm font-bold text-white transition flex items-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i> Limpar
+                </button>
+            </div>
+
+            <div id="divergences-list" class="flex flex-col gap-3">
+                <!-- Injected via JS -->
+            </div>
+            
+            <div id="empty-div-msg" class="text-center py-12 opacity-40">
+                <i class="fa-solid fa-clipboard-check text-5xl mb-4 block"></i>
+                <p class="font-bold">Nenhuma divergência registrada.</p>
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- TAB 3: BASE DE DADOS E GITHUB              -->
+        <!-- ========================================== -->
+        <section id="tab-base" class="hidden space-y-5">
+            <!-- Status & Sync Card -->
+            <div class="bg-brand-light rounded-2xl p-5 border border-slate-700 shadow-lg relative overflow-hidden">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="font-black text-lg text-white">Status do Sistema</h3>
+                        <p id="db-last-update" class="text-xs text-slate-400 mt-1">Última att: Nunca</p>
+                        <p id="db-total-items" class="text-xs font-bold text-brand-orange mt-0.5">Total: 0 produtos</p>
+                    </div>
+                    <button onclick="openGitHubModal()" class="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center border border-slate-600 hover:bg-slate-700 transition">
+                        <i class="fa-brands fa-github text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-2 mt-4">
+                    <button onclick="syncToGitHub()" class="py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-bold text-white flex justify-center items-center gap-2 transition">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Salvar Nuvem
+                    </button>
+                    <button onclick="syncFromGitHub()" class="py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-bold text-white flex justify-center items-center gap-2 transition">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Puxar Nuvem
+                    </button>
+                </div>
+            </div>
+
+            <!-- Upload Zones -->
+            <div class="bg-brand-light rounded-2xl p-4 border border-slate-700 shadow-lg space-y-4">
+                <h3 class="font-black text-white text-sm border-b border-slate-700 pb-2">Importação de Arquivos (.ods, .xlsx)</h3>
+                
+                <!-- Zone 1: Normal -->
+                <div class="relative border-2 border-dashed border-blue-500/40 rounded-xl p-4 text-center bg-blue-900/10 hover:bg-blue-900/20 transition cursor-pointer" onclick="document.getElementById('file-normal').click()">
+                    <input type="file" id="file-normal" accept=".ods, .xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event, 'normal')">
+                    <i class="fa-solid fa-file-excel text-2xl text-blue-400 mb-2"></i>
+                    <p class="text-sm font-bold text-blue-100">Base Normal <span class="text-[10px] text-blue-400 block">(Tarja Azul)</span></p>
+                    <p id="label-normal" class="text-xs text-slate-400 mt-1">Nenhum arquivo</p>
+                </div>
+
+                <!-- Zone 2: Promo -->
+                <div class="relative border-2 border-dashed border-green-500/40 rounded-xl p-4 text-center bg-green-900/10 hover:bg-green-900/20 transition cursor-pointer" onclick="document.getElementById('file-promo').click()">
+                    <input type="file" id="file-promo" accept=".ods, .xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event, 'promo')">
+                    <i class="fa-solid fa-tags text-2xl text-green-400 mb-2"></i>
+                    <p class="text-sm font-bold text-green-100">Promoção <span class="text-[10px] text-green-400 block">(Tarja Verde)</span></p>
+                    <p id="label-promo" class="text-xs text-slate-400 mt-1">Nenhum arquivo</p>
+                </div>
+
+                <!-- Zone 3: Promo Especial -->
+                <div class="relative border-2 border-dashed border-purple-500/40 rounded-xl p-4 text-center bg-purple-900/10 hover:bg-purple-900/20 transition cursor-pointer" onclick="document.getElementById('file-especial').click()">
+                    <input type="file" id="file-especial" accept=".ods, .xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event, 'especial')">
+                    <i class="fa-solid fa-star text-2xl text-purple-400 mb-2"></i>
+                    <p class="text-sm font-bold text-purple-100">Promoção Especial <span class="text-[10px] text-purple-400 block">(Tarja Roxa)</span></p>
+                    <p id="label-especial" class="text-xs text-slate-400 mt-1">Nenhum arquivo</p>
+                </div>
+
+                <button onclick="processUploadedFiles()" class="w-full py-4 rounded-xl bg-brand-orange hover:bg-brand-orangeHover text-white font-black text-sm uppercase tracking-widest transition shadow-lg shadow-orange-500/20 mt-2">
+                    Processar Arquivos
+                </button>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="bg-rose-950/30 rounded-2xl p-4 border border-rose-900 shadow-lg text-center">
+                <button onclick="clearDatabase()" class="w-full py-3 rounded-xl border border-rose-600 text-rose-500 font-bold hover:bg-rose-600 hover:text-white transition">
+                    <i class="fa-solid fa-triangle-exclamation mr-2"></i> Apagar Toda a Base
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ========================================== -->
+    <!-- MODAL: LOCALIZAÇÃO                         -->
+    <!-- ========================================== -->
+    <div id="modal-location" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center">
+        <div class="bg-brand-light w-full max-w-lg sm:rounded-2xl rounded-t-3xl p-5 border border-slate-700 animate-slide-up sm:animate-fade-in shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-black text-white">Onde está o item?</h3>
+                <button onclick="closeLocationModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <p class="text-xs text-slate-400 mb-3">Selecione uma opção rápida ou digite abaixo para registrar a divergência de etiqueta.</p>
+            
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button onclick="selectLocation('Gôndola Principal')" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-xs font-bold text-white hover:border-brand-orange transition">Gôndola Principal</button>
+                <button onclick="selectLocation('Ponta de Gôndola')" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-xs font-bold text-white hover:border-brand-orange transition">Ponta de Gôndola</button>
+                <button onclick="selectLocation('Ilha Central')" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-xs font-bold text-white hover:border-brand-orange transition">Ilha Central</button>
+                <button onclick="selectLocation('Frente de Caixa')" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-xs font-bold text-white hover:border-brand-orange transition">Frente de Caixa</button>
+                <button onclick="selectLocation('Estoque / Pátio')" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-xs font-bold text-white hover:border-brand-orange transition">Estoque / Pátio</button>
+            </div>
+
+            <div class="flex gap-2">
+                <input type="text" id="custom-location" placeholder="Ou digite o corredor/prateleira..." class="flex-1 bg-brand-blue border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-brand-orange">
+                <button onclick="confirmLocation()" class="px-6 rounded-xl bg-brand-orange hover:bg-brand-orangeHover text-white font-bold transition"><i class="fa-solid fa-check"></i></button>
+            </div>
         </div>
-      `;
-    }
+    </div>
 
-    function resetSearch() {
-      document.getElementById('code-input').value = '';
-      document.getElementById('btn-clear-input').classList.add('hidden');
-      document.getElementById('code-input').focus();
-    }
+    <!-- ========================================== -->
+    <!-- MODAL: GITHUB CONFIG                       -->
+    <!-- ========================================== -->
+    <div id="modal-github" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-brand-light w-full max-w-sm rounded-2xl p-5 border border-slate-700 animate-fade-in shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-black text-white flex items-center gap-2"><i class="fa-brands fa-github"></i> Sincronização GitHub</h3>
+                <button onclick="closeGitHubModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <p class="text-xs text-slate-400 mb-4 leading-relaxed">Conecte via API REST para salvar sua base de dados remotamente. Os dados serão salvos num arquivo <span class="text-brand-orange font-mono">db.json</span> no repositório escolhido.</p>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Personal Access Token (Classic)</label>
+                    <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" class="w-full bg-brand-blue border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 mt-1">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Dono / Organização</label>
+                    <input type="text" id="gh-owner" placeholder="seu-usuario" class="w-full bg-brand-blue border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 mt-1">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Nome do Repositório</label>
+                    <input type="text" id="gh-repo" placeholder="meu-repo-app" class="w-full bg-brand-blue border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 mt-1">
+                </div>
+            </div>
 
-    // Modal de Localização
-    function openLocationModal() {
-      document.getElementById('custom-location-input').value = '';
-      document.getElementById('location-modal').classList.remove('hidden');
-    }
-    function closeLocationModal() { document.getElementById('location-modal').classList.add('hidden'); }
-    
-    function confirmWrongPrice(location) {
-      window.updateProductStatus(currentAuditProductId, 'Divergente', location);
-      closeLocationModal();
-      resetSearch();
-    }
-    
-    function confirmWrongPriceCustom() {
-      const loc = document.getElementById('custom-location-input').value.trim() || 'Gôndola (Sem Local Específico)';
-      confirmWrongPrice(loc);
-    }
+            <button onclick="saveGitHubSettings()" class="w-full mt-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-500/20">
+                Salvar Configurações
+            </button>
+        </div>
+    </div>
 
-    // Scanner de Câmera
-    function toggleCameraScanner() {
-      const wrapper = document.getElementById('scanner-wrapper');
-      if (!wrapper.classList.contains('hidden')) { stopCameraScanner(); return; }
-      
-      wrapper.classList.remove('hidden');
-      if (!html5QrScanner) html5QrScanner = new Html5Qrcode('reader');
-      
-      html5QrScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 120 } },
-        (text) => {
-          stopCameraScanner();
-          document.getElementById('code-input').value = text;
-          handleCodeSubmit();
-        }, () => {}
-      ).catch(() => {
-        wrapper.classList.add('hidden');
-        window.showToast('Câmera bloqueada ou não encontrada.', 'error');
-      });
-    }
-    
-    function stopCameraScanner() {
-      if (html5QrScanner) {
-        html5QrScanner.stop().then(() => document.getElementById('scanner-wrapper').classList.add('hidden')).catch(()=>{});
-      }
-    }
-  </script>
+
+    <script>
+        /* =========================================================================
+           ESTADO DA APLICAÇÃO (STATE)
+           ========================================================================= */
+        const APP_VERSION = '1.0';
+        let appData = {
+            db: [], // array de produtos: { code, name, price, type: 'normal'|'promo'|'especial' }
+            divergences: [],
+            lastUpdate: null
+        };
+        
+        let ghSettings = {
+            token: '',
+            owner: '',
+            repo: '',
+            path: 'db.json'
+        };
+
+        // Arquivos temporários antes do processamento
+        let pendingUploads = {
+            normal: null,
+            promo: null,
+            especial: null
+        };
+
+        let currentProduct = null;
+        let html5QrcodeScanner = null;
+        let isScannerActive = false;
+
+        /* =========================================================================
+           INICIALIZAÇÃO & UI
+           ========================================================================= */
+        window.onload = () => {
+            loadData();
+            updateUIState();
+        };
+
+        function switchTab(tabId) {
+            // Esconde todas
+            document.getElementById('tab-conferencia').classList.add('hidden');
+            document.getElementById('tab-divergencias').classList.add('hidden');
+            document.getElementById('tab-base').classList.add('hidden');
+            
+            // Reseta botões
+            const tabs = ['conferencia', 'divergencias', 'base'];
+            tabs.forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                btn.className = 'flex-1 py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all bg-brand-light text-slate-400 hover:text-white';
+            });
+
+            // Ativa selecionada
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+            activeBtn.className = 'flex-1 py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all bg-brand-orange text-white shadow-md';
+            
+            // Foca no input se for conferencia
+            if(tabId === 'conferencia') {
+                setTimeout(() => document.getElementById('search-input').focus(), 100);
+            } else {
+                if(isScannerActive) toggleScanner();
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let colors = 'bg-slate-800 border-slate-700 text-white';
+            let icon = 'fa-info-circle text-blue-400';
+            
+            if (type === 'success') {
+                colors = 'bg-emerald-900 border-emerald-700 text-white';
+                icon = 'fa-check-circle text-emerald-400';
+            } else if (type === 'error') {
+                colors = 'bg-rose-900 border-rose-700 text-white';
+                icon = 'fa-triangle-exclamation text-rose-400';
+            } else if (type === 'warning') {
+                colors = 'bg-orange-900 border-orange-700 text-white';
+                icon = 'fa-exclamation-circle text-orange-400';
+            }
+
+            toast.className = `toast animate-slide-up flex items-center gap-3 p-4 rounded-xl shadow-2xl border ${colors}`;
+            toast.innerHTML = `<i class="fa-solid ${icon} text-xl"></i> <p class="text-sm font-bold">${message}</p>`;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('hide');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        /* =========================================================================
+           DADOS LOCAIS (LOCALSTORAGE)
+           ========================================================================= */
+        function loadData() {
+            try {
+                const stored = localStorage.getItem('auditor_db');
+                if (stored) {
+                    appData = JSON.parse(stored);
+                }
+                const ghStored = localStorage.getItem('auditor_gh');
+                if (ghStored) {
+                    ghSettings = JSON.parse(ghStored);
+                }
+            } catch (e) {
+                console.error("Erro ao carregar localStorage", e);
+            }
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem('auditor_db', JSON.stringify(appData));
+                updateUIState();
+            } catch (e) {
+                showToast("Erro ao salvar! Limite do navegador atingido?", "error");
+            }
+        }
+
+        function updateUIState() {
+            // DB Status
+            const total = appData.db ? appData.db.length : 0;
+            document.getElementById('db-total-items').innerText = `Total: ${total.toLocaleString('pt-BR')} produtos`;
+            
+            if (appData.lastUpdate) {
+                const dt = new Date(appData.lastUpdate).toLocaleString('pt-BR');
+                document.getElementById('db-last-update').innerText = `Última att: ${dt}`;
+                document.getElementById('header-db-status').innerText = `DB Local (${total})`;
+                document.getElementById('header-db-status').classList.replace('text-slate-400', 'text-emerald-400');
+            } else {
+                document.getElementById('db-last-update').innerText = `Última att: Nunca`;
+                document.getElementById('header-db-status').innerText = `DB Vazio`;
+                document.getElementById('header-db-status').classList.replace('text-emerald-400', 'text-slate-400');
+            }
+
+            // Divergences Badge & List
+            const divCount = appData.divergences ? appData.divergences.length : 0;
+            const badge = document.getElementById('div-badge');
+            if (divCount > 0) {
+                badge.innerText = divCount;
+                badge.classList.remove('hidden');
+                document.getElementById('empty-div-msg').classList.add('hidden');
+            } else {
+                badge.classList.add('hidden');
+                document.getElementById('empty-div-msg').classList.remove('hidden');
+            }
+
+            renderDivergences();
+        }
+
+        function clearDatabase() {
+            if (confirm("ATENÇÃO: Isso apagará TODOS os produtos e divergências. Confirmar?")) {
+                appData = { db: [], divergences: [], lastUpdate: null };
+                saveData();
+                showToast("Base de dados apagada.", "success");
+                document.getElementById('product-display').classList.add('hidden');
+                document.getElementById('search-input').value = '';
+            }
+        }
+
+        /* =========================================================================
+           LÓGICA DE NEGÓCIO & BUSCA
+           ========================================================================= */
+        
+        // Remove pontos, hifens, barras e transforma em inteiro para ignorar zeros à esquerda
+        function normalizeCode(code) {
+            if (!code) return '';
+            let cleaned = String(code).replace(/[\.\-\/\s]/g, '');
+            let intParsed = parseInt(cleaned, 10);
+            return isNaN(intParsed) ? cleaned : String(intParsed);
+        }
+
+        function formatCurrency(val) {
+            let num = parseFloat(val);
+            if(isNaN(num)) num = 0;
+            return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function handleSearch(e) {
+            if(e) e.preventDefault();
+            const input = document.getElementById('search-input').value.trim();
+            if(!input) return;
+            performSearch(input);
+        }
+
+        function performSearch(rawCode) {
+            if (isScannerActive) toggleScanner(); // desliga camera
+            
+            const normCode = normalizeCode(rawCode);
+            currentProduct = appData.db.find(p => p.code === normCode);
+
+            const display = document.getElementById('product-display');
+            const noMsg = document.getElementById('no-product-msg');
+
+            if (currentProduct) {
+                // Populate UI
+                document.getElementById('prod-code').innerText = `CÓD: ${rawCode} (Norm: ${normCode})`;
+                document.getElementById('prod-name').innerText = currentProduct.name;
+                
+                const precoPix = parseFloat(currentProduct.price) || 0;
+                document.getElementById('prod-price-pix').innerText = formatCurrency(precoPix);
+                
+                const precoCartaoTotal = precoPix; // Assumindo mesmo preço base para facilitar, ou ajuste de juros aqui se aplicável. A regra pede 1+5x = Total / 6
+                const precoParcela = precoCartaoTotal / 6;
+                document.getElementById('prod-price-card').innerText = `R$ ${precoCartaoTotal.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+                document.getElementById('prod-price-installments').innerText = `Entrada + 5x de ${formatCurrency(precoParcela)}`;
+
+                // Warning Tags
+                document.getElementById('promo-warning-verde').classList.add('hidden');
+                document.getElementById('promo-warning-roxa').classList.add('hidden');
+                
+                if (currentProduct.type === 'promo') {
+                    document.getElementById('promo-warning-verde').classList.remove('hidden');
+                } else if (currentProduct.type === 'especial') {
+                    document.getElementById('promo-warning-roxa').classList.remove('hidden');
+                }
+
+                display.classList.remove('hidden');
+                noMsg.classList.add('hidden');
+            } else {
+                display.classList.add('hidden');
+                noMsg.classList.remove('hidden');
+                showToast("Produto não encontrado.", "error");
+            }
+        }
+
+        function markCorrect() {
+            if(!currentProduct) return;
+            showToast("Preço validado com sucesso!", "success");
+            resetSearch();
+        }
+
+        function resetSearch() {
+            currentProduct = null;
+            document.getElementById('product-display').classList.add('hidden');
+            document.getElementById('search-input').value = '';
+            document.getElementById('search-input').focus();
+        }
+
+        /* =========================================================================
+           DIVERGÊNCIAS (ERRADO)
+           ========================================================================= */
+        function openLocationModal() {
+            if(!currentProduct) return;
+            document.getElementById('modal-location').classList.remove('hidden');
+            document.getElementById('custom-location').value = '';
+        }
+
+        function closeLocationModal() {
+            document.getElementById('modal-location').classList.add('hidden');
+        }
+
+        function selectLocation(loc) {
+            document.getElementById('custom-location').value = loc;
+            confirmLocation();
+        }
+
+        function confirmLocation() {
+            const loc = document.getElementById('custom-location').value.trim() || 'Não informada';
+            
+            if (!appData.divergences) appData.divergences = [];
+            
+            appData.divergences.unshift({
+                id: Date.now(),
+                code: currentProduct.code,
+                name: currentProduct.name,
+                pricePix: currentProduct.price,
+                type: currentProduct.type,
+                location: loc,
+                date: new Date().toISOString()
+            });
+
+            saveData();
+            closeLocationModal();
+            showToast("Divergência registrada para etiquetação!", "warning");
+            resetSearch();
+        }
+
+        function renderDivergences() {
+            const container = document.getElementById('divergences-list');
+            container.innerHTML = '';
+            
+            if(!appData.divergences) return;
+
+            appData.divergences.forEach(div => {
+                const d = new Date(div.date);
+                const dateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                
+                let badgeHtml = '';
+                if(div.type === 'promo') badgeHtml = `<span class="bg-green-500 text-white px-2 py-0.5 rounded text-[10px] uppercase font-bold">Promo</span>`;
+                if(div.type === 'especial') badgeHtml = `<span class="bg-purple-500 text-white px-2 py-0.5 rounded text-[10px] uppercase font-bold">Especial</span>`;
+
+                const card = `
+                    <div class="bg-brand-light border border-slate-700 rounded-xl p-4 shadow-md relative overflow-hidden">
+                        <div class="absolute w-1 h-full bg-rose-500 left-0 top-0"></div>
+                        <div class="flex justify-between items-start mb-2 pl-2">
+                            <span class="text-[10px] font-mono text-slate-400">${div.code}</span>
+                            <span class="text-[10px] text-slate-500">${dateStr}</span>
+                        </div>
+                        <h4 class="font-bold text-sm text-white mb-2 pl-2 leading-tight">${div.name}</h4>
+                        <div class="flex flex-wrap gap-2 pl-2 mb-3">
+                            <span class="bg-emerald-900/50 text-emerald-400 border border-emerald-700 px-2 py-0.5 rounded text-xs font-bold">${formatCurrency(div.pricePix)}</span>
+                            ${badgeHtml}
+                        </div>
+                        <div class="bg-slate-950/50 rounded-lg p-2 pl-2 flex items-center gap-2">
+                            <i class="fa-solid fa-location-dot text-rose-500 text-sm"></i>
+                            <span class="text-xs text-slate-300 font-medium">${div.location}</span>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += card;
+            });
+        }
+
+        function clearDivergences() {
+            if(confirm("Deseja apagar toda a lista de divergências locais?")) {
+                appData.divergences = [];
+                saveData();
+                showToast("Lista limpa.", "success");
+            }
+        }
+
+        function exportCSV() {
+            if(!appData.divergences || appData.divergences.length === 0) {
+                showToast("Nada para exportar.", "info");
+                return;
+            }
+            
+            let csv = "DATA,CODIGO,PRODUTO,PRECO_PIX,TIPO,LOCALIZACAO\n";
+            appData.divergences.forEach(div => {
+                const dateStr = new Date(div.date).toLocaleString('pt-BR');
+                const pName = `"${String(div.name).replace(/"/g, '""')}"`;
+                csv += `${dateStr},${div.code},${pName},${div.pricePix},${div.type},"${div.location}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Divergencias_${new Date().toISOString().substring(0,10)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        /* =========================================================================
+           SHEETJS IMPORTATION
+           ========================================================================= */
+        function handleFileSelect(event, type) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            document.getElementById(`label-${type}`).innerText = file.name;
+            pendingUploads[type] = file;
+            showToast(`Arquivo ${file.name} carregado. Clique em Processar.`, "info");
+        }
+
+        function processUploadedFiles() {
+            const types = ['normal', 'promo', 'especial'];
+            let filesToProcess = 0;
+            let tempDB = [];
+            
+            // Verifica quantos tem
+            types.forEach(t => { if(pendingUploads[t]) filesToProcess++; });
+            
+            if (filesToProcess === 0) {
+                showToast("Nenhum arquivo selecionado para processar.", "warning");
+                return;
+            }
+
+            let processed = 0;
+            showToast(`Processando ${filesToProcess} arquivo(s)... Aguarde.`, "info");
+
+            types.forEach(type => {
+                const file = pendingUploads[type];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = e.target.result;
+                        const workbook = XLSX.read(data, { type: 'binary' });
+                        // Pega apenas a primeira aba
+                        const sheetName = workbook.SheetNames[0];
+                        const sheet = workbook.Sheets[sheetName];
+                        // raw:false para tentar extrair texto de celulas formatadas como moeda
+                        const json = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "" });
+                        
+                        const extracted = parseSheetData(json, type);
+                        tempDB = tempDB.concat(extracted);
+                    } catch (error) {
+                        console.error("Erro SheetJS:", error);
+                        showToast(`Erro ao processar ${type}.`, "error");
+                    }
+
+                    processed++;
+                    if (processed === filesToProcess) {
+                        finalizeDatabaseMerge(tempDB);
+                    }
+                };
+                reader.readAsBinaryString(file);
+            });
+        }
+
+        function parseSheetData(jsonData, type) {
+            let results = [];
+            jsonData.forEach(row => {
+                // Tenta achar colunas comuns
+                let codRaw = row['Código'] || row['Codigo'] || row['CODIGO'] || row['Cód'] || row['SKU'] || row['EAN'] || row['Barras'];
+                let nameRaw = row['Descrição'] || row['Descricao'] || row['Produto'] || row['Nome'];
+                let priceRaw = row['Preço'] || row['Preco'] || row['Valor'] || row['Venda'] || row['À Vista'];
+                
+                // Heurística de fallback se os nomes das colunas não forem exatos
+                if(!codRaw || !nameRaw || !priceRaw) {
+                    const keys = Object.keys(row);
+                    if(keys.length >= 3) {
+                        if(!codRaw) codRaw = row[keys[0]]; // Assume col 1
+                        if(!nameRaw) nameRaw = row[keys[1]]; // Assume col 2
+                        if(!priceRaw) priceRaw = row[keys[2]]; // Assume col 3
+                    }
+                }
+
+                if (codRaw && nameRaw) {
+                    // Limpar preço
+                    let pClean = String(priceRaw).replace('R$', '').trim();
+                    // Converte formato BR para EN float se necessário
+                    if (pClean.includes(',') && !pClean.includes('.')) pClean = pClean.replace(',', '.');
+                    else if (pClean.includes(',') && pClean.includes('.')) pClean = pClean.replace(/\./g, '').replace(',', '.');
+                    
+                    let pFloat = parseFloat(pClean);
+                    if(isNaN(pFloat)) pFloat = 0;
+
+                    results.push({
+                        code: normalizeCode(codRaw),
+                        name: String(nameRaw).trim(),
+                        price: pFloat,
+                        type: type
+                    });
+                }
+            });
+            return results;
+        }
+
+        function finalizeDatabaseMerge(newRecords) {
+            if (newRecords.length === 0) {
+                showToast("Nenhum produto válido encontrado nas planilhas.", "error");
+                return;
+            }
+
+            // Opcional: Mesclar ou substituir. Aqui vou substituir/sobrescrever a base
+            appData.db = newRecords;
+            appData.lastUpdate = new Date().toISOString();
+            saveData();
+            
+            // Reset inputs
+            ['normal', 'promo', 'especial'].forEach(t => {
+                pendingUploads[t] = null;
+                document.getElementById(`label-${t}`).innerText = 'Nenhum arquivo';
+                document.getElementById(`file-${t}`).value = '';
+            });
+
+            showToast(`${newRecords.length} produtos importados com sucesso!`, "success");
+        }
+
+
+        /* =========================================================================
+           GITHUB API SYNC (REST)
+           ========================================================================= */
+        function openGitHubModal() {
+            document.getElementById('modal-github').classList.remove('hidden');
+            document.getElementById('gh-token').value = ghSettings.token || '';
+            document.getElementById('gh-owner').value = ghSettings.owner || '';
+            document.getElementById('gh-repo').value = ghSettings.repo || '';
+        }
+
+        function closeGitHubModal() {
+            document.getElementById('modal-github').classList.add('hidden');
+        }
+
+        function saveGitHubSettings() {
+            ghSettings = {
+                token: document.getElementById('gh-token').value.trim(),
+                owner: document.getElementById('gh-owner').value.trim(),
+                repo: document.getElementById('gh-repo').value.trim(),
+                path: 'db.json'
+            };
+            localStorage.setItem('auditor_gh', JSON.stringify(ghSettings));
+            closeGitHubModal();
+            showToast("Configurações do GitHub salvas.", "success");
+        }
+
+        async function syncToGitHub() {
+            if(!ghSettings.token || !ghSettings.owner || !ghSettings.repo) {
+                showToast("Configure as credenciais do GitHub primeiro.", "warning");
+                openGitHubModal();
+                return;
+            }
+
+            showToast("Sincronizando com GitHub... Aguarde.", "info");
+
+            const url = `https://api.github.com/repos/${ghSettings.owner}/${ghSettings.repo}/contents/${ghSettings.path}`;
+            const headers = {
+                'Authorization': `Bearer ${ghSettings.token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+            };
+
+            try {
+                // 1. Get current SHA if exists
+                let sha = null;
+                const getRes = await fetch(url, { headers });
+                if(getRes.ok) {
+                    const getData = await getRes.json();
+                    sha = getData.sha;
+                }
+
+                // 2. Prepare payload (Base64 encoded string UTF-8 safe)
+                const jsonStr = JSON.stringify(appData);
+                const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+                
+                const payload = {
+                    message: `Auditor Backup: ${new Date().toISOString()}`,
+                    content: b64
+                };
+                if(sha) payload.sha = sha;
+
+                // 3. PUT request
+                const putRes = await fetch(url, {
+                    method: 'PUT',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+
+                if(putRes.ok) {
+                    showToast("Dados salvos no GitHub com sucesso!", "success");
+                } else {
+                    const err = await putRes.json();
+                    throw new Error(err.message || "Erro no PUT");
+                }
+            } catch (error) {
+                console.error(error);
+                showToast(`Falha na sync: ${error.message}`, "error");
+            }
+        }
+
+        async function syncFromGitHub() {
+            if(!ghSettings.token || !ghSettings.owner || !ghSettings.repo) {
+                showToast("Configure as credenciais do GitHub primeiro.", "warning");
+                openGitHubModal();
+                return;
+            }
+
+            showToast("Baixando dados do GitHub... Aguarde.", "info");
+            const url = `https://api.github.com/repos/${ghSettings.owner}/${ghSettings.repo}/contents/${ghSettings.path}`;
+            const headers = {
+                'Authorization': `Bearer ${ghSettings.token}`,
+                'Accept': 'application/vnd.github.v3+json'
+            };
+
+            try {
+                const res = await fetch(url, { headers });
+                if(res.ok) {
+                    const data = await res.json();
+                    const jsonStr = decodeURIComponent(escape(atob(data.content)));
+                    const parsed = JSON.parse(jsonStr);
+                    
+                    if(parsed && parsed.db) {
+                        appData = parsed;
+                        saveData();
+                        showToast("Dados recuperados da nuvem!", "success");
+                    } else {
+                        throw new Error("JSON Inválido");
+                    }
+                } else {
+                    const err = await res.json();
+                    if(res.status === 404) showToast("Arquivo db.json não encontrado no repositório.", "warning");
+                    else throw new Error(err.message);
+                }
+            } catch (error) {
+                console.error(error);
+                showToast(`Falha no download: ${error.message}`, "error");
+            }
+        }
+
+        /* =========================================================================
+           QR CODE SCANNER (HTML5-QRCODE)
+           ========================================================================= */
+        function toggleScanner() {
+            const container = document.getElementById('reader-container');
+            
+            if (isScannerActive) {
+                if (html5QrcodeScanner) {
+                    html5QrcodeScanner.stop().then(() => {
+                        container.classList.add('hidden');
+                        isScannerActive = false;
+                    }).catch(err => {
+                        console.error("Erro ao parar scanner.", err);
+                        container.classList.add('hidden');
+                        isScannerActive = false;
+                    });
+                }
+            } else {
+                container.classList.remove('hidden');
+                
+                // Initialize if null
+                if (!html5QrcodeScanner) {
+                    html5QrcodeScanner = new Html5Qrcode("reader");
+                }
+
+                html5QrcodeScanner.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 150 } },
+                    (decodedText) => {
+                        // Success callback
+                        html5QrcodeScanner.stop();
+                        container.classList.add('hidden');
+                        isScannerActive = false;
+                        
+                        document.getElementById('search-input').value = decodedText;
+                        performSearch(decodedText);
+                        // Beep sound
+                        try {
+                            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                            const osc = ctx.createOscillator();
+                            osc.connect(ctx.destination);
+                            osc.frequency.value = 800;
+                            osc.start();
+                            osc.stop(ctx.currentTime + 0.1);
+                        } catch(e){}
+                    },
+                    (errorMessage) => {
+                        // ignore errors during scanning
+                    }
+                ).then(() => {
+                    isScannerActive = true;
+                }).catch((err) => {
+                    showToast("Câmera não permitida ou indisponível.", "error");
+                    container.classList.add('hidden');
+                });
+            }
+        }
+
+    </script>
 </body>
 </html>
