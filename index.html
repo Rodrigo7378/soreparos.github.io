@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Auditor de Preços - Cloud Sync</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- HTML5 QR / Barcode Scanner -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <!-- SheetJS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <!-- Fonte Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body { -webkit-tap-highlight-color: transparent; user-select: none; }
+    input, textarea, select { user-select: auto; }
+    .custom-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    #reader video { border-radius: 0.75rem; object-fit: cover; max-height: 220px; width: 100%; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased overflow-x-hidden">
+
+  <!-- Toast Notificações -->
+  <div id="toast-container" class="fixed top-3 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 w-11/12 max-w-md pointer-events-none"></div>
+
+  <!-- Cabeçalho -->
+  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-3">
+    <div class="max-w-lg mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/20 flex-shrink-0">
+          <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
+        </div>
+        <div class="min-w-0">
+          <h1 class="font-extrabold text-sm sm:text-base text-white truncate leading-tight">
+            Auditor Nuvem
+          </h1>
+          <p id="cloud-status" class="text-[11px] text-amber-400 font-bold truncate flex items-center gap-1">
+            <i class="fa-solid fa-circle-notch fa-spin"></i> Conectando...
+          </p>
+        </div>
+      </div>
+      <button onclick="toggleAudio()" class="w-9 h-9 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center justify-center transition active:scale-95">
+        <i id="sound-icon" class="fa-solid fa-volume-high text-xs text-blue-400"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Navegação -->
+  <nav class="sticky top-[61px] z-20 bg-slate-900 border-b border-slate-800 px-2">
+    <div class="max-w-lg mx-auto grid grid-cols-3 text-xs sm:text-sm font-bold">
+      <button onclick="switchTab('tab-audit')" id="nav-audit" class="py-3 border-b-2 border-blue-500 text-blue-400 flex items-center justify-center gap-1.5 transition">
+        <i class="fa-solid fa-magnifying-glass"></i><span>Conferir</span>
+      </button>
+      <button onclick="switchTab('tab-dashboard')" id="nav-dashboard" class="py-3 border-b-2 border-transparent text-slate-400 flex items-center justify-center gap-1.5 transition">
+        <i class="fa-solid fa-tags"></i><span>Etiquetas</span>
+        <span id="badge-divergent-count" class="hidden px-1.5 py-0.5 text-[10px] bg-rose-600 text-white rounded-full font-black leading-none">0</span>
+      </button>
+      <button onclick="switchTab('tab-catalog')" id="nav-catalog" class="py-3 border-b-2 border-transparent text-slate-400 flex items-center justify-center gap-1.5 transition">
+        <i class="fa-solid fa-file-spreadsheet"></i><span>Planilha</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Conteúdo Principal -->
+  <main class="flex-1 w-full max-w-lg mx-auto p-3 sm:p-4 pb-24">
+
+    <!-- ========================================== -->
+    <!-- ABA 1: CONFERIR PREÇOS                     -->
+    <!-- ========================================== -->
+    <section id="tab-audit" class="space-y-4">
+      <div class="bg-slate-900 rounded-2xl p-3.5 border border-slate-800 shadow-lg relative">
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <i class="fa-solid fa-keyboard text-blue-400"></i> Código ou Nome
+          </label>
+        </div>
+        <form onsubmit="handleCodeSubmit(event)" class="flex items-center gap-2">
+          <div class="relative flex-1 min-w-0">
+            <input type="text" id="code-input" oninput="handleSearchInput(event)" placeholder="Ex: 102045" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 rounded-xl pl-3.5 pr-9 py-3 text-sm font-mono font-bold text-white placeholder-slate-500 outline-none transition">
+            <button type="button" id="btn-clear-input" onclick="clearSearchInput()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center text-xs"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+          <button type="button" onclick="toggleCameraScanner()" class="h-12 w-12 rounded-xl bg-slate-800 text-blue-400 border border-slate-700 flex items-center justify-center flex-shrink-0 transition active:scale-95"><i class="fa-solid fa-camera text-lg"></i></button>
+          <button type="submit" class="h-12 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center justify-center flex-shrink-0 transition active:scale-95"><i class="fa-solid fa-magnifying-glass"></i></button>
+        </form>
+        
+        <div id="autocomplete-box" class="hidden mt-2 pt-2 border-t border-slate-800">
+          <div id="autocomplete-list" class="space-y-1.5 max-h-60 overflow-y-auto custom-scroll pr-1"></div>
+        </div>
+
+        <div id="scanner-wrapper" class="hidden mt-3 rounded-xl overflow-hidden border border-blue-500/60 bg-black">
+          <div id="reader" class="w-full"></div>
+          <div class="px-3 py-2 bg-slate-900 flex items-center justify-between text-xs">
+            <span class="text-slate-300 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>Lendo código...</span>
+            <button type="button" onclick="stopCameraScanner()" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold text-[11px]">Fechar</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="product-card-container" class="hidden"></div>
+
+      <div id="audit-empty-state" class="bg-slate-900 rounded-2xl p-5 border border-slate-800 text-center space-y-3">
+        <div class="w-14 h-14 rounded-2xl bg-blue-950/80 border border-blue-800/80 text-blue-400 flex items-center justify-center mx-auto text-2xl">
+          <i class="fa-solid fa-cloud-bolt"></i>
+        </div>
+        <div>
+          <h2 class="font-extrabold text-base text-white">Auditoria Conectada</h2>
+          <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Sincronização em tempo real. Digite o código sem precisar de pontos ou zeros à esquerda.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- ABA 2: ETIQUETAS                           -->
+    <!-- ========================================== -->
+    <section id="tab-dashboard" class="hidden space-y-4">
+      <div class="bg-slate-900 rounded-2xl p-3.5 border border-slate-800 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-extrabold text-white flex items-center gap-2"><i class="fa-solid fa-tags text-rose-400"></i> Etiquetas Divergentes</h3>
+          <button onclick="exportCSV()" class="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg"><i class="fa-solid fa-file-csv"></i> Baixar CSV</button>
+        </div>
+        <div id="audit-list" class="divide-y divide-slate-800/80 max-h-[60vh] overflow-y-auto custom-scroll"></div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- ABA 3: PLANILHA E UPLOAD                   -->
+    <!-- ========================================== -->
+    <section id="tab-catalog" class="hidden space-y-4">
+      <div class="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-3">
+        <div>
+          <h2 class="font-extrabold text-sm text-white flex items-center gap-2"><i class="fa-solid fa-file-excel text-emerald-400"></i> Importar Planilha</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Detecta automaticamente Tarja Roxa, Verde ou Azul. Salva na nuvem para todos os dispositivos.</p>
+        </div>
+
+        <div id="drop-zone" onclick="document.getElementById('file-input').click()" class="border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-2xl p-5 text-center cursor-pointer bg-slate-950/60 transition">
+          <input type="file" id="file-input" accept=".ods,.xlsx,.xls,.csv" onchange="handleFileUpload(event)" class="hidden">
+          <div class="w-11 h-11 rounded-2xl bg-emerald-950 border border-emerald-800 text-emerald-400 flex items-center justify-center mx-auto mb-2 text-lg"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+          <p class="text-xs font-bold text-white">Toque para selecionar planilha</p>
+        </div>
+
+        <div id="upload-progress" class="hidden space-y-2">
+          <div class="flex justify-between text-[10px] font-bold text-slate-400">
+            <span id="upload-status-text">Lendo arquivo...</span>
+            <span id="upload-pct">0%</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+            <div id="upload-bar" class="bg-emerald-500 h-2 rounded-full w-0 transition-all duration-300"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 rounded-2xl p-4 border border-slate-800">
+        <h3 class="text-xs font-extrabold text-white mb-2">Base de Produtos na Nuvem</h3>
+        <p class="text-xs text-slate-400 mb-3">Total: <b id="cloud-total-count" class="text-blue-400">0</b> itens sincronizados.</p>
+        <button onclick="clearCloudDatabase()" class="w-full py-2.5 rounded-xl border border-rose-800 text-rose-400 text-xs font-bold hover:bg-rose-950/50 transition">Limpar Banco de Dados</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: LOCAL DA ETIQUETA                                 -->
+  <!-- ======================================================== -->
+  <div id="location-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 rounded-3xl max-w-sm w-full p-5 border border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="font-extrabold text-sm text-white flex items-center gap-2"><i class="fa-solid fa-location-dot text-rose-400"></i> Onde está o item?</h3>
+        <button type="button" onclick="closeLocationModal()" class="text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div>
+        <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Locais rápidos:</span>
+        <div class="grid grid-cols-2 gap-1.5">
+          <button onclick="confirmWrongPrice('Gôndola Principal')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-layer-group text-rose-400 mr-1.5"></i>Gôndola Principal</button>
+          <button onclick="confirmWrongPrice('Ponta de Gôndola')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-star text-amber-400 mr-1.5"></i>Ponta de Gôndola</button>
+          <button onclick="confirmWrongPrice('Ilha Central')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-cubes text-blue-400 mr-1.5"></i>Ilha Central</button>
+          <button onclick="confirmWrongPrice('Frente de Caixa')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-cash-register text-emerald-400 mr-1.5"></i>Frente de Caixa</button>
+          <button onclick="confirmWrongPrice('Pátio / Depósito')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-rose-500/60 text-left text-xs font-semibold text-slate-200"><i class="fa-solid fa-warehouse text-teal-400 mr-1.5"></i>Pátio / Depósito</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Ou digite o local:</label>
+        <input type="text" id="custom-location-input" placeholder="Ex: Corredor 3" class="w-full bg-slate-950 border border-slate-700 focus:border-rose-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
+      </div>
+      <div class="flex gap-2 pt-1">
+        <button onclick="closeLocationModal()" class="flex-1 py-3 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs">Cancelar</button>
+        <button onclick="confirmWrongPriceCustom()" class="flex-1 py-3 rounded-xl bg-rose-600 text-white font-black text-xs shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5"><i class="fa-solid fa-check"></i> Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Scripts -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Globals
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'auditor-nuvem-app';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      projectId: "dummy-project",
+      apiKey: "dummy-key",
+      authDomain: "dummy-domain"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    let currentUser = null;
+    let globalProducts = {}; // Memory state
+    window.db = db; // Expose for external functions
+
+    // Utility: Toast & Audio
+    window.showToast = (msg, type = 'info') => {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      const styles = {
+        success: 'bg-emerald-600 text-white border-emerald-500',
+        warning: 'bg-amber-600 text-white border-amber-500',
+        error: 'bg-rose-600 text-white border-rose-500',
+        info: 'bg-slate-800 text-white border-slate-700'
+      }[type];
+      el.className = `${styles} border px-4 py-3 rounded-2xl shadow-xl text-xs font-bold flex items-center gap-2`;
+      el.innerHTML = `<i class="fa-solid fa-circle-info"></i><span>${msg}</span>`;
+      container.appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2800);
+    };
+
+    let audioEnabled = true;
+    window.toggleAudio = () => {
+      audioEnabled = !audioEnabled;
+      document.getElementById('sound-icon').className = audioEnabled ? 'fa-solid fa-volume-high text-xs text-blue-400' : 'fa-solid fa-volume-xmark text-xs text-slate-500';
+    };
+    window.playTone = (type) => {
+      if (!audioEnabled) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const now = ctx.currentTime;
+        if (type === 'beep') {
+          osc.frequency.setValueAtTime(1600, now);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+          osc.start(now); osc.stop(now + 0.1);
+        } else if (type === 'warning') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(300, now);
+          osc.frequency.setValueAtTime(200, now + 0.2);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+          osc.start(now); osc.stop(now + 0.3);
+        }
+      } catch(e) {}
+    };
+
+    // Firebase Auth Setup
+    async function initAuth() {
+      try {
+        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        if (token) {
+          await signInWithCustomToken(auth, token);
+        } else {
+          await signInAnonymously(auth);
+        }
+        currentUser = auth.currentUser;
+        setupRealtimeSync();
+        document.getElementById('cloud-status').innerHTML = '<i class="fa-solid fa-cloud text-emerald-400"></i> Online';
+        document.getElementById('cloud-status').classList.replace('text-amber-400', 'text-emerald-400');
+      } catch (err) {
+        document.getElementById('cloud-status').innerHTML = '<i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Erro DB';
+      }
+    }
+
+    // Real-time Database Sync (Firestore)
+    function setupRealtimeSync() {
+      if (!currentUser) return;
+      const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+      
+      onSnapshot(productsRef, (snapshot) => {
+        globalProducts = {};
+        snapshot.forEach(doc => {
+          globalProducts[doc.id] = doc.data();
+        });
+        updateDashboardUI();
+        document.getElementById('cloud-total-count').textContent = Object.keys(globalProducts).length;
+      }, (err) => {
+        console.error("Erro Sync:", err);
+      });
+    }
+
+    // Window exposure for UI buttons
+    window.handleFileUpload = async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      if (!currentUser) { window.showToast('Aguarde conexão com a nuvem.', 'warning'); return; }
+
+      document.getElementById('upload-progress').classList.remove('hidden');
+      document.getElementById('upload-status-text').textContent = 'Analisando matriz da planilha...';
+      
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        
+        const extracted = parseSpreadsheetRows(rows);
+        if (extracted.length === 0) {
+          window.showToast('Nenhum produto encontrado. Verifique as colunas.', 'error');
+          document.getElementById('upload-progress').classList.add('hidden');
+          return;
+        }
+
+        await uploadToFirestore(extracted);
+      };
+      reader.readAsArrayBuffer(file);
+    };
+
+    function parseSpreadsheetRows(matrix) {
+      const products = [];
+      for (let i = 0; i < matrix.length; i++) {
+        const row = matrix[i];
+        const rowString = row.join(' ').toLowerCase();
+        
+        let code = '', name = '', price = 0, promo = 'AZUL';
+
+        // Lógica de Promoção exata como requisitado
+        if (rowString.includes('roxa') || rowString.includes('especial')) {
+          promo = 'ROXA';
+        } else if (rowString.includes('verde') || rowString.includes('promo')) {
+          promo = 'VERDE';
+        }
+
+        // Heurística básica de extração
+        for (let j = 0; j < row.length; j++) {
+          let cell = String(row[j]).trim();
+          if (!cell) continue;
+
+          // Extrair Código (Números com possíveis pontos)
+          if (!code && /^[\d\.\-]+$/.test(cell) && cell.length > 2 && cell.replace(/\D/g, '').length > 2) {
+            code = cell;
+          } 
+          // Extrair Nome (Textos grandes que não são apenas moedas ou cabeçalhos)
+          else if (!name && cell.length > 5 && /[a-zA-Z]/.test(cell) && !/^(código|descrição|produto|preço)/i.test(cell)) {
+            name = cell;
+          }
+          // Extrair Preço (Números flutuantes ou moedas R$)
+          else if (!price) {
+            let cleanNum = cell.replace(/[R$\s]/gi, '').replace(/\./g, '').replace(',', '.');
+            if (!isNaN(parseFloat(cleanNum)) && parseFloat(cleanNum) > 0 && parseFloat(cleanNum) < 100000) {
+              price = parseFloat(cleanNum);
+            }
+          }
+        }
+
+        if (code && name) {
+          const normCode = String(code).replace(/[\.\-\s]/g, '').replace(/^0+/, '');
+          if (normCode) {
+            products.push({
+              id: normCode,
+              originalCode: code,
+              name: name,
+              price: price || 0,
+              promoTag: promo,
+              status: 'Pendente',
+              location: null
+            });
+          }
+        }
+      }
+      return products;
+    }
+
+    async function uploadToFirestore(productsArr) {
+      const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+      const total = productsArr.length;
+      let count = 0;
+      
+      document.getElementById('upload-status-text').textContent = 'Sincronizando com a Nuvem...';
+      
+      // Batch writes in chunks of 450 (Firestore limit is 500)
+      const chunks = [];
+      for (let i = 0; i < total; i += 450) {
+        chunks.push(productsArr.slice(i, i + 450));
+      }
+
+      try {
+        for (const chunk of chunks) {
+          const batch = writeBatch(db);
+          chunk.forEach(p => {
+            const docRef = doc(collRef, p.id);
+            batch.set(docRef, p);
+          });
+          await batch.commit();
+          count += chunk.length;
+          
+          const pct = Math.round((count / total) * 100);
+          document.getElementById('upload-pct').textContent = `${pct}%`;
+          document.getElementById('upload-bar').style.width = `${pct}%`;
+        }
+        window.showToast(`${total} produtos salvos na nuvem!`, 'success');
+      } catch(err) {
+        window.showToast('Erro ao salvar na nuvem.', 'error');
+      }
+      
+      setTimeout(() => { document.getElementById('upload-progress').classList.add('hidden'); }, 1500);
+      document.getElementById('file-input').value = '';
+    }
+
+    window.clearCloudDatabase = async () => {
+      if (!currentUser) return;
+      const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+      try {
+        const snap = await getDocs(collRef);
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => { batch.delete(d.ref); });
+        await batch.commit();
+        window.showToast('Base de dados limpa com sucesso.', 'success');
+      } catch(e) {
+        window.showToast('Erro ao limpar base.', 'error');
+      }
+    };
+
+    // Auditoria (Preço Correto / Errado) Update na Nuvem
+    window.updateProductStatus = async (productId, status, location = null) => {
+      if (!currentUser || !globalProducts[productId]) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', productId);
+      try {
+        await setDoc(docRef, { 
+          status: status, 
+          location: location,
+          lastAudit: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        }, { merge: true });
+        
+        if (status === 'Correto') {
+          window.playTone('beep');
+          window.showToast('Marcado como Correto', 'success');
+        } else {
+          window.playTone('warning');
+          window.showToast(`Divergência salva em: ${location}`, 'warning');
+        }
+      } catch(e) {
+        window.showToast('Erro de sincronização.', 'error');
+      }
+    };
+
+    // Export Dashboard Logic
+    window.updateDashboardUI = () => {
+      const listEl = document.getElementById('audit-list');
+      const badge = document.getElementById('badge-divergent-count');
+      
+      const divergents = Object.values(globalProducts).filter(p => p.status === 'Divergente');
+      
+      if (divergents.length > 0) {
+        badge.textContent = divergents.length;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+
+      if (divergents.length === 0) {
+        listEl.innerHTML = `<div class="p-5 text-center text-xs text-slate-500">Nenhuma divergência registrada.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = divergents.map(p => `
+        <div class="p-3 hover:bg-slate-800/60 flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[10px] text-blue-400">${p.originalCode}</span>
+              <span class="px-2 py-0.5 rounded-full bg-rose-950 border border-rose-800 text-rose-300 font-bold text-[10px]"><i class="fa-solid fa-location-dot mr-1"></i>${p.location}</span>
+            </div>
+            <p class="text-xs font-bold text-white truncate">${p.name}</p>
+          </div>
+        </div>
+      `).join('');
+    };
+
+    window.exportCSV = () => {
+      const divergents = Object.values(globalProducts).filter(p => p.status === 'Divergente');
+      if (divergents.length === 0) {
+        window.showToast('Nenhuma divergência para exportar.', 'warning');
+        return;
+      }
+      let csv = "Codigo;Produto;Preco_Base;Local;Hora\n";
+      divergents.forEach(p => {
+        csv += `"${p.originalCode}";"${p.name}";${p.price.toFixed(2).replace('.', ',')};"${p.location}";${p.lastAudit || ''}\n`;
+      });
+      const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `divergencias_${new Date().getTime()}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    };
+
+    // Init Logic
+    initAuth();
+  </script>
+
+  <!-- Script UI Principal -->
+  <script>
+    let currentAuditProductId = null;
+    let html5QrScanner = null;
+
+    // Normalização Inteligente
+    function normalizeQuery(code) {
+      return String(code).replace(/[\.\-\s]/g, '').replace(/^0+/, '');
+    }
+
+    // Formatador
+    function formatMoney(val) {
+      return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    // Tabs
+    function switchTab(tabId) {
+      ['tab-audit', 'tab-dashboard', 'tab-catalog'].forEach(id => document.getElementById(id).classList.add('hidden'));
+      ['nav-audit', 'nav-dashboard', 'nav-catalog'].forEach(id => {
+        document.getElementById(id).classList.remove('border-blue-500', 'text-blue-400');
+        document.getElementById(id).classList.add('border-transparent', 'text-slate-400');
+      });
+      document.getElementById(tabId).classList.remove('hidden');
+      const activeNav = { 'tab-audit': 'nav-audit', 'tab-dashboard': 'nav-dashboard', 'tab-catalog': 'nav-catalog' }[tabId];
+      document.getElementById(activeNav).classList.add('border-blue-500', 'text-blue-400');
+      document.getElementById(activeNav).classList.remove('border-transparent', 'text-slate-400');
+    }
+
+    // Busca
+    function handleSearchInput(e) {
+      const q = e.target.value.trim();
+      if (!q) {
+        document.getElementById('btn-clear-input').classList.add('hidden');
+        document.getElementById('autocomplete-box').classList.add('hidden');
+        return;
+      }
+      document.getElementById('btn-clear-input').classList.remove('hidden');
+      
+      const normQ = normalizeQuery(q);
+      const allProducts = Object.values(window.db ? globalProducts : {});
+      
+      const matches = allProducts.filter(p => p.id.includes(normQ) || p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+      
+      if (matches.length > 0) {
+        document.getElementById('autocomplete-box').classList.remove('hidden');
+        document.getElementById('autocomplete-list').innerHTML = matches.map(p => `
+          <button type="button" onclick="selectProduct('${p.id}')" class="w-full text-left p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-blue-500/50 flex flex-col gap-1 transition">
+            <div class="flex items-center gap-1.5"><span class="px-1.5 py-0.5 bg-blue-950 text-blue-400 font-mono text-[10px] rounded">${p.originalCode}</span><span class="text-xs font-bold text-white truncate">${p.name}</span></div>
+          </button>
+        `).join('');
+      } else {
+        document.getElementById('autocomplete-box').classList.add('hidden');
+      }
+    }
+
+    function clearSearchInput() {
+      document.getElementById('code-input').value = '';
+      document.getElementById('btn-clear-input').classList.add('hidden');
+      document.getElementById('autocomplete-box').classList.add('hidden');
+      document.getElementById('code-input').focus();
+    }
+
+    function handleCodeSubmit(e) {
+      if (e) e.preventDefault();
+      const q = document.getElementById('code-input').value.trim();
+      const normQ = normalizeQuery(q);
+      
+      if (globalProducts[normQ]) {
+        selectProduct(normQ);
+      } else {
+        const matches = Object.values(globalProducts).filter(p => p.id.includes(normQ));
+        if (matches.length === 1) {
+          selectProduct(matches[0].id);
+        } else {
+          window.showToast('Código não encontrado.', 'error');
+        }
+      }
+    }
+
+    function selectProduct(id) {
+      const p = globalProducts[id];
+      if (!p) return;
+      currentAuditProductId = id;
+      
+      document.getElementById('autocomplete-box').classList.add('hidden');
+      document.getElementById('audit-empty-state').classList.add('hidden');
+      
+      const container = document.getElementById('product-card-container');
+      container.classList.remove('hidden');
+
+      // Calcular preços
+      const basePrice = p.price;
+      const instPrice = basePrice / 6;
+
+      // Lógica de Tarjas (Promocionais) Exatamente como requisitado
+      let promoHtml = '';
+      let borderStyle = 'border-slate-800';
+      
+      if (p.promoTag === 'ROXA') {
+        borderStyle = 'border-purple-500 shadow-purple-500/20';
+        promoHtml = `
+          <div class="p-3 bg-purple-950/40 border border-purple-500/60 rounded-xl mb-3">
+            <span class="text-[11px] font-black text-purple-300 block mb-1 uppercase"><i class="fa-solid fa-star"></i> Promoção Especial (Tarja Roxa)</span>
+            <p class="text-xs font-bold text-purple-100">(COLOCAR ETIQUETA PROMOÇÃO VERDE (ETIQUETA 48) JUNTO DO CARD (se houver))</p>
+          </div>
+        `;
+      } else if (p.promoTag === 'VERDE') {
+        borderStyle = 'border-emerald-500 shadow-emerald-500/20';
+        promoHtml = `
+          <div class="p-3 bg-emerald-950/40 border border-emerald-500/60 rounded-xl mb-3">
+            <span class="text-[11px] font-black text-emerald-400 block mb-1 uppercase"><i class="fa-solid fa-tag"></i> Promoção (Tarja Verde)</span>
+            <p class="text-xs font-bold text-emerald-100">(COLOCAR ETIQUETA PROMOÇÃO BRANCA (ETIQUETA 48) JUNTO DO CARD (se houver))</p>
+          </div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="bg-slate-900 rounded-3xl p-4 sm:p-5 border ${borderStyle} shadow-lg space-y-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="px-2.5 py-1 rounded-xl bg-blue-950 text-blue-400 border border-blue-800 font-mono font-black text-xs">Cód: ${p.originalCode}</span>
+          </div>
+          
+          <h2 class="text-base font-black text-white leading-snug break-words mb-3">${p.name}</h2>
+          
+          ${promoHtml}
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- PIX -->
+            <div class="rounded-2xl p-4 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700">
+              <span class="text-[11px] font-black uppercase text-emerald-400 flex items-center gap-1.5 mb-1"><i class="fa-solid fa-money-bill-wave"></i> À Vista no PIX / Dinheiro</span>
+              <div class="text-2xl font-black font-mono text-white">${formatMoney(basePrice)}</div>
+            </div>
+            
+            <!-- Cartão 1+5x -->
+            <div class="rounded-2xl p-4 bg-gradient-to-br from-blue-950/50 to-slate-900 border border-blue-900/50">
+              <span class="text-[11px] font-black uppercase text-blue-400 flex items-center gap-1.5 mb-1"><i class="fa-solid fa-credit-card"></i> No Cartão 1 + 5x</span>
+              <div class="text-lg font-black font-mono text-blue-200">Entrada 1x de ${formatMoney(instPrice)}<br>+ 5x de ${formatMoney(instPrice)}</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 mt-4">
+            <button onclick="window.updateProductStatus('${p.id}', 'Correto'); resetSearch();" class="py-3.5 rounded-2xl bg-emerald-600 text-white font-black text-xs flex items-center justify-center gap-2 active:scale-95 transition"><i class="fa-solid fa-check"></i> Preço Correto</button>
+            <button onclick="openLocationModal()" class="py-3.5 rounded-2xl bg-rose-600 text-white font-black text-xs flex items-center justify-center gap-2 active:scale-95 transition"><i class="fa-solid fa-xmark"></i> Preço Errado</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function resetSearch() {
+      document.getElementById('code-input').value = '';
+      document.getElementById('btn-clear-input').classList.add('hidden');
+      document.getElementById('code-input').focus();
+    }
+
+    // Modal de Localização
+    function openLocationModal() {
+      document.getElementById('custom-location-input').value = '';
+      document.getElementById('location-modal').classList.remove('hidden');
+    }
+    function closeLocationModal() { document.getElementById('location-modal').classList.add('hidden'); }
+    
+    function confirmWrongPrice(location) {
+      window.updateProductStatus(currentAuditProductId, 'Divergente', location);
+      closeLocationModal();
+      resetSearch();
+    }
+    
+    function confirmWrongPriceCustom() {
+      const loc = document.getElementById('custom-location-input').value.trim() || 'Gôndola (Sem Local Específico)';
+      confirmWrongPrice(loc);
+    }
+
+    // Scanner de Câmera
+    function toggleCameraScanner() {
+      const wrapper = document.getElementById('scanner-wrapper');
+      if (!wrapper.classList.contains('hidden')) { stopCameraScanner(); return; }
+      
+      wrapper.classList.remove('hidden');
+      if (!html5QrScanner) html5QrScanner = new Html5Qrcode('reader');
+      
+      html5QrScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 120 } },
+        (text) => {
+          stopCameraScanner();
+          document.getElementById('code-input').value = text;
+          handleCodeSubmit();
+        }, () => {}
+      ).catch(() => {
+        wrapper.classList.add('hidden');
+        window.showToast('Câmera bloqueada ou não encontrada.', 'error');
+      });
+    }
+    
+    function stopCameraScanner() {
+      if (html5QrScanner) {
+        html5QrScanner.stop().then(() => document.getElementById('scanner-wrapper').classList.add('hidden')).catch(()=>{});
+      }
+    }
+  </script>
+</body>
+</html>
