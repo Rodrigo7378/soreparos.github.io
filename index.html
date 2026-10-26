@@ -1,0 +1,1648 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Auditor de Preços PRO</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- HTML5 QR / Barcode Scanner -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+    <!-- SheetJS -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+    <!-- Fonte Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        brand: {
+                            blue: '#0f172a',
+                            light: '#1e293b',
+                            orange: '#f97316',
+                            orangeHover: '#ea580c'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        body { -webkit-tap-highlight-color: transparent; background-color: #0f172a; color: #f8fafc; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes slideInUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-slide-up { animation: slideInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+        
+        #toast-container { z-index: 9999; }
+        .toast { transition: all 0.3s ease; }
+        .toast.hide { opacity: 0; transform: translateY(-20px); }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col overflow-x-hidden">
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 flex flex-col gap-2 w-11/12 max-w-md pointer-events-none"></div>
+
+    <!-- Header / Navbar -->
+    <header class="sticky top-0 z-40 bg-brand-blue/95 backdrop-blur-md border-b border-slate-800 shadow-lg">
+        <div class="max-w-xl mx-auto">
+            <div class="flex items-center justify-between px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-orange to-red-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20">
+                        <i class="fa-solid fa-barcode text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="font-black text-lg text-white leading-none">Auditor<span class="text-brand-orange">PRO</span></h1>
+                            <span id="header-count-pill" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0 itens</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 font-semibold mt-1 flex items-center gap-1" id="header-db-status">
+                            <i class="fa-regular fa-clock text-brand-orange"></i> Sem atualização
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    <button onclick="syncFromGitHub(true)" title="Baixar base atualizada do GitHub" class="h-9 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition active:scale-95">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> <span class="hidden sm:inline">Sincronizar</span>
+                    </button>
+                    <button onclick="openGitHubModal()" title="Configurar GitHub" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center transition">
+                        <i class="fa-brands fa-github text-base"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="flex px-3 pb-2.5 gap-2 text-xs font-extrabold">
+                <button onclick="switchTab('conferencia')" id="tab-btn-conferencia" class="flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-orange text-white shadow-md shadow-orange-500/20">
+                    <i class="fa-solid fa-magnifying-glass"></i> Conferir
+                </button>
+                <button onclick="switchTab('divergencias')" id="tab-btn-divergencias" class="flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-light text-slate-400 hover:text-white border border-slate-800">
+                    <i class="fa-solid fa-tags"></i> Etiquetas Erradas
+                    <span id="div-badge" class="hidden bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full">0</span>
+                </button>
+                <button onclick="switchTab('base')" id="tab-btn-base" class="flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-light text-slate-400 hover:text-white border border-slate-800">
+                    <i class="fa-solid fa-file-arrow-up"></i> Planilhas / DB
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-xl mx-auto p-4 pb-24">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: CONFERÊNCIA                         -->
+        <!-- ========================================== -->
+        <section id="tab-conferencia" class="space-y-4">
+            <!-- Search & Scanner Box -->
+            <div class="bg-brand-light rounded-2xl p-4 shadow-xl border border-slate-700/70">
+                <form onsubmit="handleSearch(event)" class="flex flex-col gap-2.5">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+                            Código, Barras (EAN) ou Nome (Ignora pontos ".")
+                        </label>
+                        <span class="text-[10px] text-slate-500 font-mono">Ex: 01.02.045 = 102045</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input type="text" id="search-input" oninput="handleLiveSuggestions(this.value)" placeholder="Digite o código ou bipe..." autocomplete="off" class="w-full bg-brand-blue border-2 border-slate-600 focus:border-brand-orange rounded-xl pl-4 pr-10 py-3.5 text-base font-extrabold text-white placeholder-slate-500 outline-none transition">
+                            <button type="button" onclick="clearSearchInput()" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1">
+                                <i class="fa-solid fa-circle-xmark text-lg"></i>
+                            </button>
+                        </div>
+                        <button type="button" onclick="toggleScanner()" title="Ler Código de Barras pela Câmera" class="px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center gap-1.5 font-bold transition shadow-lg shadow-indigo-600/20 active:scale-95">
+                            <i class="fa-solid fa-camera text-lg"></i>
+                        </button>
+                        <button type="submit" class="px-5 rounded-xl bg-brand-orange hover:bg-brand-orangeHover text-white font-black flex items-center justify-center transition shadow-lg shadow-orange-500/20 active:scale-95">
+                            <i class="fa-solid fa-magnifying-glass text-lg"></i>
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Quick Autocomplete Suggestions -->
+                <div id="search-suggestions" class="hidden mt-2 bg-slate-900 rounded-xl border border-slate-700 divide-y divide-slate-800 max-h-60 overflow-y-auto"></div>
+
+                <!-- Camera Barcode Scanner Container -->
+                <div id="reader-container" class="hidden mt-4 rounded-xl overflow-hidden border-2 border-indigo-500 bg-black">
+                    <div class="bg-indigo-950 px-3 py-2 flex items-center justify-between">
+                        <span class="text-xs font-bold text-indigo-200 flex items-center gap-2">
+                            <i class="fa-solid fa-camera-rotate animate-pulse"></i> Aponte para o Código de Barras
+                        </span>
+                        <button type="button" onclick="toggleScanner()" class="text-xs font-extrabold text-rose-400 hover:text-rose-300 px-2 py-1 rounded bg-rose-950/50">
+                            Fechar
+                        </button>
+                    </div>
+                    <div id="reader" class="w-full"></div>
+                </div>
+            </div>
+
+            <!-- Product Result Card -->
+            <div id="product-display" class="hidden flex-col gap-4 animate-slide-up">
+                <div id="product-card-border" class="bg-brand-light rounded-2xl p-5 shadow-2xl border-2 border-slate-700 flex flex-col gap-4 relative overflow-hidden">
+                    
+                    <!-- Top Ribbon: Tarja Status -->
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/80 pb-3">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span id="prod-code-badge" class="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono font-black text-brand-orange"></span>
+                            <span id="prod-ean-badge" class="hidden px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-mono text-slate-300"></span>
+                        </div>
+                        <span id="prod-tarja-badge" class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm"></span>
+                    </div>
+
+                    <!-- Product Name -->
+                    <div>
+                        <h2 id="prod-name" class="text-xl font-black text-white leading-snug"></h2>
+                    </div>
+
+                    <!-- Dynamic Promo Etiqueta 48 Instructions -->
+                    <div id="promo-warning-verde" class="hidden bg-emerald-950/90 border-2 border-emerald-400 rounded-xl p-3.5 flex items-center gap-3 shadow-lg">
+                        <div class="w-10 h-10 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0 font-black text-lg">
+                            48
+                        </div>
+                        <div>
+                            <span class="text-[10px] font-extrabold uppercase tracking-widest text-emerald-300 block">Instrução Obrigatória • Tarja Verde</span>
+                            <p class="text-xs sm:text-sm font-black text-white uppercase leading-tight mt-0.5">
+                                (COLOCAR ETIQUETA PROMOÇÃO BRANCA (ETIQUETA 48) JUNTO DO CARD (se houver))
+                            </p>
+                        </div>
+                    </div>
+
+                    <div id="promo-warning-roxa" class="hidden bg-purple-950/90 border-2 border-purple-400 rounded-xl p-3.5 flex items-center gap-3 shadow-lg">
+                        <div class="w-10 h-10 rounded-lg bg-purple-400 text-slate-950 flex items-center justify-center shrink-0 font-black text-lg">
+                            48
+                        </div>
+                        <div>
+                            <span class="text-[10px] font-extrabold uppercase tracking-widest text-purple-300 block">Instrução Obrigatória • Tarja Roxa</span>
+                            <p class="text-xs sm:text-sm font-black text-white uppercase leading-tight mt-0.5">
+                                (COLOCAR ETIQUETA PROMOÇÃO VERDE (ETIQUETA 48) JUNTO DO CARD (se houver))
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Dual Pricing Cards (À Vista PIX & Cartão 1 + 5x) -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <!-- Card 1: À Vista / PIX -->
+                        <div class="bg-gradient-to-br from-emerald-950 to-slate-900 border-2 border-emerald-500/60 rounded-2xl p-4 flex flex-col justify-between relative overflow-hidden shadow-lg">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                                    <i class="fa-brands fa-pix"></i> À Vista (PIX / Dinheiro)
+                                </span>
+                            </div>
+                            <div class="text-3xl sm:text-4xl font-black text-white tracking-tight my-1.5" id="prod-price-pix">
+                                R$ 0,00
+                            </div>
+                            <span class="text-[11px] text-emerald-300/80 font-semibold">Pagamento imediato</span>
+                        </div>
+
+                        <!-- Card 2: Cartão 1 + 5x -->
+                        <div class="bg-gradient-to-br from-blue-950 to-slate-900 border-2 border-blue-500/60 rounded-2xl p-4 flex flex-col justify-between relative overflow-hidden shadow-lg">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[11px] font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                                    <i class="fa-regular fa-credit-card"></i> No Cartão (1 + 5x)
+                                </span>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">6x</span>
+                            </div>
+                            <div class="text-2xl sm:text-3xl font-black text-white tracking-tight my-1.5" id="prod-price-installment-highlight">
+                                1+5x R$ 0,00
+                            </div>
+                            <div class="flex items-center justify-between text-xs font-bold text-blue-200 border-t border-blue-800/60 pt-1.5 mt-1">
+                                <span>Total no Cartão:</span>
+                                <span id="prod-price-card-total" class="text-white font-black">R$ 0,00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audit Action Buttons -->
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="markCorrect()" class="py-4 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm uppercase tracking-wider shadow-xl shadow-emerald-600/25 transition active:scale-95 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-circle-check text-lg"></i> Preço Correto
+                    </button>
+                    <button onclick="openLocationModal()" class="py-4 px-4 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm uppercase tracking-wider shadow-xl shadow-rose-600/25 transition active:scale-95 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation text-lg"></i> Preço Errado
+                    </button>
+                </div>
+            </div>
+
+            <!-- Empty / Not Found State -->
+            <div id="no-product-msg" class="hidden bg-brand-light/60 border border-slate-800 rounded-2xl text-center py-10 px-4">
+                <div class="w-14 h-14 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-magnifying-glass-minus text-2xl"></i>
+                </div>
+                <p class="text-base font-black text-white">Código não encontrado na base</p>
+                <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Verifique se as planilhas foram importadas na aba Planilhas / DB ou tente buscar por parte da descrição.</p>
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- TAB 2: ETIQUETAS ERRADAS (DIVERGÊNCIAS)    -->
+        <!-- ========================================== -->
+        <section id="tab-divergencias" class="hidden space-y-4">
+            <div class="bg-brand-light p-4 rounded-2xl border border-slate-700 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <h2 class="text-base font-black text-white">Lista para Troca de Etiquetas</h2>
+                    <p class="text-xs text-slate-400">Itens sinalizados com preço incorreto na loja</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="copyDivergencesText()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-extrabold text-white transition flex items-center gap-1.5 shadow">
+                        <i class="fa-regular fa-copy"></i> Copiar
+                    </button>
+                    <button onclick="exportCSV()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-extrabold text-white transition flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-file-csv"></i> CSV
+                    </button>
+                    <button onclick="clearDivergences()" class="px-3 py-2 bg-rose-950 hover:bg-rose-600 border border-rose-500/40 rounded-xl text-xs font-extrabold text-rose-300 hover:text-white transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="divergences-list" class="flex flex-col gap-3"></div>
+            
+            <div id="empty-div-msg" class="bg-brand-light/40 border border-slate-800 rounded-2xl text-center py-12 px-4">
+                <i class="fa-solid fa-check-double text-4xl text-emerald-500/50 mb-3 block"></i>
+                <p class="font-bold text-slate-300">Nenhuma etiqueta com erro pendente!</p>
+                <p class="text-xs text-slate-500 mt-1">Quando você marcar um produto como "Preço Errado", ele aparecerá aqui com o local exato e o preço correto para impressão.</p>
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- TAB 3: PLANILHAS (.ODS) E GITHUB DB        -->
+        <!-- ========================================== -->
+        <section id="tab-base" class="hidden space-y-5">
+            
+            <!-- GitHub Cloud Sync Status Card -->
+            <div class="bg-brand-light rounded-2xl p-5 border border-slate-700 shadow-lg">
+                <div class="flex justify-between items-start gap-3">
+                    <div>
+                        <span class="text-[10px] font-black uppercase tracking-widest text-brand-orange">Banco Compartilhado GitHub</span>
+                        <h3 class="font-black text-base text-white mt-0.5">Sincronização Entre Aparelhos</h3>
+                        <p id="db-last-update" class="text-xs text-emerald-400 font-semibold mt-1">Última atualização: Nunca</p>
+                        <div class="flex flex-wrap gap-2 mt-2 text-[11px] font-bold">
+                            <span class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30" id="stat-normal">Normal: 0</span>
+                            <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" id="stat-promo">Promo: 0</span>
+                            <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" id="stat-especial">Especial: 0</span>
+                        </div>
+                    </div>
+                    <button onclick="openGitHubModal()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-600 flex items-center gap-1.5 shrink-0">
+                        <i class="fa-brands fa-github text-base"></i> Configurar
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-2.5 mt-4">
+                    <button onclick="syncToGitHub()" class="py-3 px-3 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-black text-white flex justify-center items-center gap-2 transition shadow-lg shadow-blue-600/20 active:scale-95">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Salvar no GitHub
+                    </button>
+                    <button onclick="syncFromGitHub()" class="py-3 px-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-black text-white flex justify-center items-center gap-2 transition shadow-lg shadow-emerald-600/20 active:scale-95">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Baixar do GitHub
+                    </button>
+                </div>
+            </div>
+
+            <!-- 3 Distinct Upload Spaces for .ODS -->
+            <div class="bg-brand-light rounded-2xl p-5 border border-slate-700 shadow-lg space-y-4">
+                <div>
+                    <h3 class="font-black text-white text-base">Importar Planilhas de Preço (.ods / .xlsx)</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Envie uma ou as três planilhas abaixo. Os preços à vista e 1+5x são extraídos automaticamente.</p>
+                </div>
+                
+                <!-- 1. Fora de Promoção (Tarja Azul) -->
+                <div onclick="document.getElementById('file-normal').click()" class="group border-2 border-dashed border-blue-500/50 hover:border-blue-400 rounded-2xl p-4 bg-blue-950/20 hover:bg-blue-950/40 transition cursor-pointer flex items-center justify-between gap-3">
+                    <input type="file" id="file-normal" accept=".ods,.xlsx,.xls,.csv" class="hidden" onchange="handleFileUpload(event, 'normal')">
+                    <div class="flex items-center gap-3.5">
+                        <div class="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center shrink-0">
+                            <i class="fa-solid fa-file-Invoice-dollar text-xl"></i>
+                        </div>
+                        <div>
+                            <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-600 text-white">Tarja Azul</span>
+                            <h4 class="text-sm font-black text-white mt-1">1. Fora da Promoção (NORMAL.ods)</h4>
+                            <p id="label-normal" class="text-xs text-slate-400 mt-0.5">Toque para selecionar planilha normal</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-upload text-blue-400 text-lg mr-2"></i>
+                </div>
+
+                <!-- 2. Promoção (Tarja Verde) -->
+                <div onclick="document.getElementById('file-promo').click()" class="group border-2 border-dashed border-emerald-500/50 hover:border-emerald-400 rounded-2xl p-4 bg-emerald-950/20 hover:bg-emerald-950/40 transition cursor-pointer flex items-center justify-between gap-3">
+                    <input type="file" id="file-promo" accept=".ods,.xlsx,.xls,.csv" class="hidden" onchange="handleFileUpload(event, 'promo')">
+                    <div class="flex items-center gap-3.5">
+                        <div class="w-12 h-12 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+                            <i class="fa-solid fa-tags text-xl"></i>
+                        </div>
+                        <div>
+                            <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-600 text-white">Tarja Verde • Etiqueta 48 Branca</span>
+                            <h4 class="text-sm font-black text-white mt-1">2. Promoção (PROM.ods)</h4>
+                            <p id="label-promo" class="text-xs text-slate-400 mt-0.5">Toque para selecionar planilha promoção</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-upload text-emerald-400 text-lg mr-2"></i>
+                </div>
+
+                <!-- 3. Promoção Especial (Tarja Roxa) -->
+                <div onclick="document.getElementById('file-especial').click()" class="group border-2 border-dashed border-purple-500/50 hover:border-purple-400 rounded-2xl p-4 bg-purple-950/20 hover:bg-purple-950/40 transition cursor-pointer flex items-center justify-between gap-3">
+                    <input type="file" id="file-especial" accept=".ods,.xlsx,.xls,.csv" class="hidden" onchange="handleFileUpload(event, 'especial')">
+                    <div class="flex items-center gap-3.5">
+                        <div class="w-12 h-12 rounded-xl bg-purple-600/20 border border-purple-500/40 text-purple-400 flex items-center justify-center shrink-0">
+                            <i class="fa-solid fa-star text-xl"></i>
+                        </div>
+                        <div>
+                            <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-purple-600 text-white">Tarja Roxa • Etiqueta 48 Verde</span>
+                            <h4 class="text-sm font-black text-white mt-1">3. Promoção Especial (PROMROXA.ods)</h4>
+                            <p id="label-especial" class="text-xs text-slate-400 mt-0.5">Toque para selecionar promoção especial</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-upload text-purple-400 text-lg mr-2"></i>
+                </div>
+            </div>
+
+            <!-- Live Price Extraction Preview & Column Mode Switcher -->
+            <div class="bg-brand-light rounded-2xl p-5 border border-slate-700 shadow-lg space-y-3">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <h3 class="font-black text-white text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-eye text-brand-orange"></i> Prévia dos Preços Extraídos
+                        </h3>
+                        <p class="text-[11px] text-slate-400">Confira se o À Vista e o 1+5x batem com sua planilha</p>
+                    </div>
+                </div>
+
+                <!-- Mode Selector for 2nd price column -->
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2">
+                    <label class="text-[11px] font-bold text-slate-300 block">Como interpretar a coluna de Cartão da planilha?</label>
+                    <div class="grid grid-cols-3 gap-1.5 text-[11px] font-extrabold">
+                        <button type="button" onclick="setCardPricingMode('auto')" id="mode-btn-auto" class="py-2 px-2 rounded-lg bg-brand-orange text-white transition">
+                            Automático
+                        </button>
+                        <button type="button" onclick="setCardPricingMode('installment')" id="mode-btn-installment" class="py-2 px-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition">
+                            2º Valor = Parcela 1+5x
+                        </button>
+                        <button type="button" onclick="setCardPricingMode('total')" id="mode-btn-total" class="py-2 px-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition">
+                            2º Valor = Total Cartão
+                        </button>
+                    </div>
+                </div>
+
+                <div id="price-preview-list" class="space-y-2 text-xs">
+                    <!-- Rendered dynamically -->
+                </div>
+            </div>
+
+            <!-- Danger Zone: Clear Local + GitHub -->
+            <div class="bg-rose-950/20 rounded-2xl p-4 border border-rose-900/60 space-y-2">
+                <h4 class="text-xs font-black uppercase tracking-wider text-rose-400">Zona de Limpeza</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button onclick="openClearModal('local')" class="py-3 px-4 rounded-xl border border-rose-600/60 text-rose-400 font-bold text-xs hover:bg-rose-600 hover:text-white transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-eraser"></i> Apagar Base Local
+                    </button>
+                    <button onclick="openClearModal('both')" class="py-3 px-4 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-black text-xs transition flex items-center justify-center gap-2 shadow-lg">
+                        <i class="fa-solid fa-trash-can"></i> Zerar Tudo (Local + GitHub)
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ========================================== -->
+    <!-- MODAL: ONDE ESTÁ O ITEM NA LOJA?           -->
+    <!-- ========================================== -->
+    <div id="modal-location" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center">
+        <div class="bg-brand-light w-full max-w-lg sm:rounded-2xl rounded-t-3xl p-5 border border-slate-700 animate-slide-up shadow-2xl">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-rose-400">Etiqueta Divergente</span>
+                    <h3 class="text-lg font-black text-white">Onde está o item na loja?</h3>
+                </div>
+                <button onclick="closeLocationModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <p class="text-xs text-slate-400 mb-3">Toque em um local rápido ou digite o corredor para facilitar a troca da etiqueta:</p>
+            
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <button onclick="selectLocation('Gôndola Principal')" class="p-3 rounded-xl bg-slate-800 hover:bg-brand-orange border border-slate-700 text-xs font-extrabold text-white text-left transition flex items-center gap-2">
+                    <i class="fa-solid fa-store text-brand-orange"></i> Gôndola Principal
+                </button>
+                <button onclick="selectLocation('Ponta de Gôndola')" class="p-3 rounded-xl bg-slate-800 hover:bg-brand-orange border border-slate-700 text-xs font-extrabold text-white text-left transition flex items-center gap-2">
+                    <i class="fa-solid fa-star text-brand-orange"></i> Ponta de Gôndola
+                </button>
+                <button onclick="selectLocation('Ilha Central')" class="p-3 rounded-xl bg-slate-800 hover:bg-brand-orange border border-slate-700 text-xs font-extrabold text-white text-left transition flex items-center gap-2">
+                    <i class="fa-solid fa-boxes-stacked text-brand-orange"></i> Ilha Central
+                </button>
+                <button onclick="selectLocation('Frente de Caixa')" class="p-3 rounded-xl bg-slate-800 hover:bg-brand-orange border border-slate-700 text-xs font-extrabold text-white text-left transition flex items-center gap-2">
+                    <i class="fa-solid fa-cash-register text-brand-orange"></i> Frente de Caixa
+                </button>
+                <button onclick="selectLocation('Prateleira Superior/Inferior')" class="p-3 rounded-xl bg-slate-800 hover:bg-brand-orange border border-slate-700 text-xs font-extrabold text-white text-left transition flex items-center gap-2">
+                    <i class="fa-solid fa-layer-group text-brand-orange"></i> Prateleira Alta/Baixa
+                </button>
+                <button onclick="selectLocation('Pátio / Depósito')" class="p-3 rounded-xl bg-slate-800 hover:bg-brand-orange border border-slate-700 text-xs font-extrabold text-white text-left transition flex items-center gap-2">
+                    <i class="fa-solid fa-warehouse text-brand-orange"></i> Pátio / Depósito
+                </button>
+            </div>
+
+            <div class="flex gap-2">
+                <input type="text" id="custom-location" placeholder="Ex: Corredor 04 - Seção Elétrica..." class="flex-1 bg-brand-blue border border-slate-700 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-brand-orange">
+                <button onclick="confirmLocation()" class="px-5 rounded-xl bg-brand-orange hover:bg-brand-orangeHover text-white font-black text-sm transition">
+                    Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL: CONFIRMAÇÃO DE LIMPEZA              -->
+    <!-- ========================================== -->
+    <div id="modal-clear-confirm" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-brand-light w-full max-w-sm rounded-2xl p-5 border border-rose-500/40 animate-fade-in shadow-2xl text-center">
+            <div class="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-3">
+                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+            </div>
+            <h3 class="text-base font-black text-white" id="clear-modal-title">Confirmar Limpeza?</h3>
+            <p class="text-xs text-slate-400 mt-1 mb-5" id="clear-modal-desc">Todos os registros selecionados serão removidos.</p>
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="closeClearModal()" class="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs">Cancelar</button>
+                <button id="clear-modal-confirm-btn" class="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs">Sim, Apagar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL: GITHUB CONFIG                       -->
+    <!-- ========================================== -->
+    <div id="modal-github" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-brand-light w-full max-w-sm rounded-2xl p-5 border border-slate-700 animate-fade-in shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-black text-white flex items-center gap-2"><i class="fa-brands fa-github text-xl"></i> Banco no GitHub</h3>
+                <button onclick="closeGitHubModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <p class="text-xs text-slate-400 mb-4 leading-relaxed">Salva a base de preços e etiquetas erradas diretamente no arquivo <span class="text-brand-orange font-mono">db_precos.json</span> do seu repositório no GitHub.</p>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-400">Token do GitHub (Classic com permissão "repo")</label>
+                    <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" class="w-full bg-brand-blue border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange mt-1">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-400">Usuário / Dono do Repositório</label>
+                    <input type="text" id="gh-owner" placeholder="ex: joaosilva" class="w-full bg-brand-blue border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange mt-1">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-400">Nome do Repositório</label>
+                    <input type="text" id="gh-repo" placeholder="ex: auditor-precos" class="w-full bg-brand-blue border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-brand-orange mt-1">
+                </div>
+            </div>
+
+            <button onclick="saveGitHubSettings()" class="w-full mt-5 py-3 rounded-xl bg-brand-orange hover:bg-brand-orangeHover text-white font-black text-sm transition shadow-lg">
+                Salvar e Conectar
+            </button>
+        </div>
+    </div>
+
+
+    <script>
+        /* =========================================================================
+           ESTADO DA APLICAÇÃO
+           ========================================================================= */
+        let appData = {
+            db: [], // { code, rawCode, barcode, name, priceCash, priceCardTotal, priceCardInstallment, rawPrices: [], type: 'normal'|'promo'|'especial' }
+            divergences: [],
+            lastUpdate: null,
+            cardMode: 'auto' // 'auto' | 'installment' | 'total'
+        };
+        
+        let ghSettings = {
+            token: '',
+            owner: '',
+            repo: '',
+            path: 'db_precos.json'
+        };
+
+        let currentProduct = null;
+        let html5QrcodeScanner = null;
+        let isScannerActive = false;
+
+        /* =========================================================================
+           INICIALIZAÇÃO
+           ========================================================================= */
+        window.onload = () => {
+            loadData();
+            updateUIState();
+            renderPricePreview();
+        };
+
+        function switchTab(tabId) {
+            ['conferencia', 'divergencias', 'base'].forEach(t => {
+                document.getElementById(`tab-${t}`).classList.add('hidden');
+                const btn = document.getElementById(`tab-btn-${t}`);
+                btn.className = 'flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-light text-slate-400 hover:text-white border border-slate-800';
+            });
+
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+            activeBtn.className = 'flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-orange text-white shadow-md shadow-orange-500/20';
+
+            if (tabId === 'conferencia') {
+                setTimeout(() => document.getElementById('search-input').focus(), 80);
+            } else if (tabId === 'base') {
+                renderPricePreview();
+            }
+
+            if (tabId !== 'conferencia' && isScannerActive) {
+                toggleScanner();
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let colors = 'bg-slate-800 border-slate-600 text-white';
+            let icon = 'fa-circle-info text-blue-400';
+            
+            if (type === 'success') {
+                colors = 'bg-emerald-950 border-emerald-500 text-white';
+                icon = 'fa-circle-check text-emerald-400';
+            } else if (type === 'error') {
+                colors = 'bg-rose-950 border-rose-500 text-white';
+                icon = 'fa-triangle-exclamation text-rose-400';
+            } else if (type === 'warning') {
+                colors = 'bg-amber-950 border-amber-500 text-white';
+                icon = 'fa-circle-exclamation text-amber-400';
+            }
+
+            toast.className = `toast animate-slide-up flex items-center gap-3 p-3.5 rounded-xl shadow-2xl border ${colors}`;
+            toast.innerHTML = `<i class="fa-solid ${icon} text-lg shrink-0"></i> <p class="text-xs font-extrabold leading-snug">${message}</p>`;
+            
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('hide');
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        /* =========================================================================
+           ARMAZENAMENTO LOCAL E ATUALIZAÇÃO DE UI
+           ========================================================================= */
+        function loadData() {
+            try {
+                const stored = localStorage.getItem('auditor_pro_db_v2');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    appData = Object.assign(appData, parsed);
+                }
+                const ghStored = localStorage.getItem('auditor_gh_v2');
+                if (ghStored) {
+                    ghSettings = Object.assign(ghSettings, JSON.parse(ghStored));
+                }
+            } catch (e) {
+                console.error("Erro ao carregar localStorage", e);
+            }
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem('auditor_pro_db_v2', JSON.stringify(appData));
+                updateUIState();
+            } catch (e) {
+                showToast("Memória cheia ao salvar localmente!", "error");
+            }
+        }
+
+        function updateUIState() {
+            const db = appData.db || [];
+            const total = db.length;
+            const countNormal = db.filter(x => x.type === 'normal').length;
+            const countPromo = db.filter(x => x.type === 'promo').length;
+            const countEspecial = db.filter(x => x.type === 'especial').length;
+
+            document.getElementById('header-count-pill').innerText = `${total.toLocaleString('pt-BR')} itens`;
+            document.getElementById('stat-normal').innerText = `Normal: ${countNormal}`;
+            document.getElementById('stat-promo').innerText = `Promo: ${countPromo}`;
+            document.getElementById('stat-especial').innerText = `Especial: ${countEspecial}`;
+
+            if (appData.lastUpdate) {
+                const dt = new Date(appData.lastUpdate);
+                const formatted = `${dt.toLocaleDateString('pt-BR')} às ${dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}`;
+                document.getElementById('db-last-update').innerText = `Última atualização do DB: ${formatted}`;
+                document.getElementById('header-db-status').innerHTML = `<i class="fa-solid fa-database text-emerald-400"></i> DB: ${formatted}`;
+            } else {
+                document.getElementById('db-last-update').innerText = `Última atualização: Nunca`;
+                document.getElementById('header-db-status').innerHTML = `<i class="fa-regular fa-clock text-brand-orange"></i> Aguardando Planilha`;
+            }
+
+            // Update Mode Buttons
+            ['auto', 'installment', 'total'].forEach(m => {
+                const b = document.getElementById(`mode-btn-${m}`);
+                if (b) {
+                    b.className = (appData.cardMode === m)
+                        ? 'py-2 px-2 rounded-lg bg-brand-orange text-white transition shadow'
+                        : 'py-2 px-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition';
+                }
+            });
+
+            // Divergences badge
+            const divCount = appData.divergences ? appData.divergences.length : 0;
+            const badge = document.getElementById('div-badge');
+            if (divCount > 0) {
+                badge.innerText = divCount;
+                badge.classList.remove('hidden');
+                document.getElementById('empty-div-msg').classList.add('hidden');
+            } else {
+                badge.classList.add('hidden');
+                document.getElementById('empty-div-msg').classList.remove('hidden');
+            }
+
+            renderDivergences();
+        }
+
+        /* =========================================================================
+           NORMALIZAÇÃO DE CÓDIGOS E CONVERSÃO ROBUSTA DE PREÇOS (.ODS)
+           ========================================================================= */
+        // Ignora pontos ".", hifens, barras, espaços e zeros à esquerda
+        function normalizeCode(val) {
+            if (val === null || val === undefined) return '';
+            let str = String(val).trim();
+            // Remove pontos, traços, barras e espaços
+            let cleaned = str.replace(/[\.\-\/\s]/g, '');
+            if (!cleaned) return '';
+            // Se for apenas dígitos, remove zeros à esquerda
+            if (/^\d+$/.test(cleaned)) {
+                let noZeros = cleaned.replace(/^0+/, '');
+                return noZeros || '0';
+            }
+            return cleaned.toUpperCase();
+        }
+
+        function formatCurrency(val) {
+            let num = parseFloat(val);
+            if (isNaN(num)) num = 0;
+            return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        /**
+         * Extrator numérico à prova de falhas para células do LibreOffice Calc (.ods) / Excel
+         * Combina o valor raw (float nativo) e o valor formatado ("R$ 1.234,56" ou "45,90")
+         */
+        function parseSmartNumber(rawVal, fmtVal) {
+            // 1. Se o SheetJS já entregou um número puro positivo
+            if (typeof rawVal === 'number' && !isNaN(rawVal) && isFinite(rawVal)) {
+                return rawVal;
+            }
+
+            // 2. Caso contrário, analisa a string formatada ou bruta
+            let str = String(fmtVal || rawVal || '').trim();
+            if (!str) return NaN;
+
+            // Ignora códigos com múltiplos pontos tipo "01.02.045"
+            if ((str.match(/\./g) || []).length >= 2 && !str.includes(',')) {
+                return NaN;
+            }
+
+            // Remove "R$", espaços e letras, mantendo apenas dígitos, vírgula, ponto e sinal
+            let clean = str.replace(/[R$\sA-Za-z]/g, '');
+            if (!clean) return NaN;
+
+            if (clean.includes(',') && clean.includes('.')) {
+                // Verifica quem vem por último (separador decimal real)
+                if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+                    // Formato BR: 1.234,56
+                    clean = clean.replace(/\./g, '').replace(',', '.');
+                } else {
+                    // Formato US: 1,234.56
+                    clean = clean.replace(/,/g, '');
+                }
+            } else if (clean.includes(',')) {
+                // Apenas vírgula: "45,90" -> "45.90"
+                const parts = clean.split(',');
+                if (parts.length === 2 && parts[1].length <= 3) {
+                    clean = parts[0] + '.' + parts[1];
+                } else {
+                    clean = clean.replace(/,/g, '');
+                }
+            } else if (clean.includes('.')) {
+                // Apenas ponto: se tiver 1 ou 2 casas no fim ("45.90" ou "45.9"), é decimal!
+                const parts = clean.split('.');
+                if (parts.length === 2 && parts[1].length === 3 && parseInt(parts[0]) < 100) {
+                    // Ex: "1.250" milhar redondo
+                    clean = clean.replace(/\./g, '');
+                }
+                // Caso contrário mantém o ponto como decimal
+            }
+
+            let num = parseFloat(clean);
+            return isNaN(num) ? NaN : num;
+        }
+
+        /**
+         * Calcula Preço À Vista, Total Cartão e Parcela (1+5x = 6x) a partir da lista de números encontrados na linha
+         */
+        function computePricesFromNumbers(nums, mode = 'auto') {
+            let valid = (nums || []).filter(n => typeof n === 'number' && !isNaN(n) && n > 0 && n < 500000);
+            if (valid.length === 0) {
+                return { priceCash: 0, priceCardTotal: 0, priceCardInstallment: 0 };
+            }
+
+            if (valid.length === 1) {
+                const p = valid[0];
+                return {
+                    priceCash: p,
+                    priceCardTotal: p,
+                    priceCardInstallment: p / 6
+                };
+            }
+
+            // Quando há 2 ou mais números de preço na linha (ex: [À Vista, 1+5x] ou [À Vista, Total Cartão])
+            let p1 = valid[0];
+            let p2 = valid[1];
+
+            // Se houver 3 números (ex: [À Vista, Parcela 1+5x, Total Cartão])
+            if (valid.length >= 3) {
+                // Verifica se algum par tem relação de ~6x
+                const sorted = [...valid].sort((a, b) => a - b);
+                const smallest = sorted[0];
+                const middle = sorted[1];
+                const largest = sorted[2];
+                if (Math.abs((smallest * 6) - largest) / largest < 0.15) {
+                    return {
+                        priceCash: middle,
+                        priceCardInstallment: smallest,
+                        priceCardTotal: largest
+                    };
+                }
+            }
+
+            if (mode === 'installment') {
+                return {
+                    priceCash: p1,
+                    priceCardInstallment: p2,
+                    priceCardTotal: p2 * 6
+                };
+            } else if (mode === 'total') {
+                return {
+                    priceCash: p1,
+                    priceCardTotal: p2,
+                    priceCardInstallment: p2 / 6
+                };
+            }
+
+            // Modo AUTO: detecta se p2 já é o valor da parcela (1+5x = 1/6 do valor) ou o valor total no cartão
+            if (p2 < p1 * 0.45 && p2 > p1 * 0.10) {
+                // p2 é claramente o valor da parcela (cerca de 1/6 de p1)
+                return {
+                    priceCash: p1,
+                    priceCardInstallment: p2,
+                    priceCardTotal: p2 * 6
+                };
+            } else if (p1 < p2 * 0.45 && p1 > p2 * 0.10) {
+                // p1 é a parcela e p2 é o à vista
+                return {
+                    priceCash: p2,
+                    priceCardInstallment: p1,
+                    priceCardTotal: p1 * 6
+                };
+            } else {
+                // Ambos são valores totais (ex: R$ 100 à vista e R$ 115 a prazo)
+                const cash = Math.min(p1, p2);
+                const cardTotal = Math.max(p1, p2);
+                return {
+                    priceCash: cash,
+                    priceCardTotal: cardTotal,
+                    priceCardInstallment: cardTotal / 6
+                };
+            }
+        }
+
+        function setCardPricingMode(newMode) {
+            appData.cardMode = newMode;
+            // Recalcula todos os itens já carregados na memória instantaneamente
+            appData.db.forEach(item => {
+                if (item.rawPrices && item.rawPrices.length > 0) {
+                    const calc = computePricesFromNumbers(item.rawPrices, newMode);
+                    item.priceCash = calc.priceCash;
+                    item.priceCardTotal = calc.priceCardTotal;
+                    item.priceCardInstallment = calc.priceCardInstallment;
+                }
+            });
+            saveData();
+            renderPricePreview();
+            if (currentProduct) {
+                renderProductCard(currentProduct);
+            }
+            showToast("Modo de cálculo atualizado em toda a base!", "success");
+        }
+
+        /* =========================================================================
+           PARSER MATRICIAL DE PLANILHAS .ODS / .XLSX
+           ========================================================================= */
+        function handleFileUpload(event, type) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const labelEl = document.getElementById(`label-${type}`);
+            labelEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-brand-orange"></i> Lendo ${file.name}...`;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    let extractedItems = [];
+                    workbook.SheetNames.forEach(sheetName => {
+                        const sheet = workbook.Sheets[sheetName];
+                        if (!sheet) return;
+                        
+                        // Lê tanto os valores brutos (números) quanto os formatados (texto)
+                        const rowsRaw = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
+                        const rowsFmt = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+                        
+                        const items = parseMatrixSheet(rowsRaw, rowsFmt, type);
+                        extractedItems = extractedItems.concat(items);
+                    });
+
+                    if (extractedItems.length === 0) {
+                        labelEl.innerHTML = `<span class="text-rose-400">Nenhum produto detectado em ${file.name}</span>`;
+                        showToast("Não foi possível encontrar linhas de produtos válidas.", "error");
+                        return;
+                    }
+
+                    // Substitui os produtos anteriores daquele mesmo tipo (normal, promo ou especial) e mantém os outros
+                    const otherItems = (appData.db || []).filter(item => item.type !== type);
+                    appData.db = otherItems.concat(extractedItems);
+                    appData.lastUpdate = new Date().toISOString();
+                    
+                    saveData();
+                    renderPricePreview();
+
+                    const withPriceCount = extractedItems.filter(x => x.priceCash > 0).length;
+                    labelEl.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-check"></i> ${file.name}: ${extractedItems.length} itens (${withPriceCount} com preço)</span>`;
+                    showToast(`${extractedItems.length} produtos (${type.toUpperCase()}) carregados com sucesso!`, "success");
+                } catch (err) {
+                    console.error("Erro ao ler planilha:", err);
+                    labelEl.innerHTML = `<span class="text-rose-400">Erro ao ler arquivo</span>`;
+                    showToast("Erro ao processar planilha .ods/.xlsx", "error");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function parseMatrixSheet(rowsRaw, rowsFmt, type) {
+            const results = [];
+            const maxRows = Math.max(rowsRaw.length, rowsFmt.length);
+
+            const headerBlacklist = /^(DESCRI|PRODUTO|ITEM|MERCADORIA|PRECO|PREÇO|VALOR|CODIGO|CÓDIGO|COD|EAN|BARRAS|UNID|UND|MARCA|SETOR|TABELA|LISTA|PAGINA|PÁGINA|DATA|TOTAL)$/i;
+
+            for (let r = 0; r < maxRows; r++) {
+                const rRaw = rowsRaw[r] || [];
+                const rFmt = rowsFmt[r] || [];
+                const colCount = Math.max(rRaw.length, rFmt.length);
+                if (colCount < 2) continue;
+
+                // 1. Localiza a coluna que contém a Descrição / Nome do Produto
+                let nameColIdx = -1;
+                let bestName = '';
+
+                for (let c = 0; c < colCount; c++) {
+                    const cellText = String(rFmt[c] !== undefined && rFmt[c] !== '' ? rFmt[c] : (rRaw[c] || '')).trim();
+                    if (cellText.length < 3) continue;
+
+                    // Ignora se parece moeda "R$ 15,00"
+                    if (/^R\$\s*[\d\.,]+$/i.test(cellText)) continue;
+
+                    // Conta quantas letras existem na célula
+                    const letterMatches = cellText.match(/[A-Za-zÀ-ÿ]/g);
+                    const letterCount = letterMatches ? letterMatches.length : 0;
+
+                    if (letterCount >= 3 && !headerBlacklist.test(cellText)) {
+                        // Se a linha for um cabeçalho de tabela ("CÓDIGO | DESCRIÇÃO | À VISTA"), pula a linha inteira
+                        if (/^(DESCRI[CÇ][AÃ]O|NOME DO PRODUTO|PRODUTO\s*\/?\s*SERVI[CÇ]O)$/i.test(cellText)) {
+                            nameColIdx = -2; // flag header row
+                            break;
+                        }
+                        if (cellText.length > bestName.length) {
+                            bestName = cellText;
+                            nameColIdx = c;
+                        }
+                    }
+                }
+
+                if (nameColIdx < 0 || !bestName) continue;
+
+                // 2. Extrai Códigos (SKU / Código Interno e EAN / Código de Barras) nas colunas ANTES do nome (ou em toda a linha se for código pontuado/EAN)
+                let codesFound = [];
+                let rawCodeDisplay = '';
+                let barcodeDisplay = '';
+
+                for (let c = 0; c < colCount; c++) {
+                    if (c === nameColIdx) continue;
+                    const rawVal = rRaw[c];
+                    const fmtVal = String(rFmt[c] !== undefined && rFmt[c] !== '' ? rFmt[c] : (rawVal !== null && rawVal !== undefined ? rawVal : '')).trim();
+                    if (!fmtVal) continue;
+
+                    const digitsOnly = fmtVal.replace(/[\.\-\/\s]/g, '');
+
+                    // Se está à esquerda do Nome do Produto, ou tem formato de código "01.02.045", ou é EAN (8 a 14 dígitos inteiros)
+                    const isLeftOfName = c < nameColIdx;
+                    const isDottedSku = /^\d+(\.\d+)+$/.test(fmtVal);
+                    const isBarcodeLength = /^\d{8,14}$/.test(digitsOnly) && !fmtVal.includes(',') && !fmtVal.toUpperCase().includes('R$');
+
+                    if (isLeftOfName || isDottedSku || isBarcodeLength) {
+                        if (/^\d+$/.test(digitsOnly) && digitsOnly.length >= 1) {
+                            const norm = normalizeCode(fmtVal);
+                            if (norm && !codesFound.includes(norm)) {
+                                codesFound.push(norm);
+                            }
+                            if (isBarcodeLength && !barcodeDisplay) {
+                                barcodeDisplay = digitsOnly;
+                            } else if (!rawCodeDisplay) {
+                                rawCodeDisplay = fmtVal;
+                            }
+                        }
+                    }
+                }
+
+                // Se não encontrou nenhum código na linha, não é um produto válido
+                if (codesFound.length === 0) continue;
+
+                // 3. Extrai todos os Preços nas colunas À DIREITA da Descrição do Produto
+                let priceNumbers = [];
+                for (let c = nameColIdx + 1; c < colCount; c++) {
+                    const rawVal = rRaw[c];
+                    const fmtVal = rFmt[c];
+                    const strCheck = String(fmtVal || rawVal || '').trim();
+                    if (!strCheck) continue;
+
+                    // Ignora se for código de barras longo (8+ dígitos sem vírgula)
+                    if (/^\d{8,14}$/.test(strCheck.replace(/\s/g, ''))) continue;
+                    // Ignora unidades de medida curtas como "UN", "PC", "KG", "MT", "CX"
+                    if (/^(UN|UND|PC|PÇ|KG|MT|M2|CX|LT|PAR|JG|KIT|RL)$/i.test(strCheck)) continue;
+
+                    const num = parseSmartNumber(rawVal, fmtVal);
+                    if (!isNaN(num) && num > 0 && num < 500000) {
+                        priceNumbers.push(num);
+                    }
+                }
+
+                // Fallback: se não achou preço à direita da descrição, verifica se alguma coluna antes tinha valor com vírgula/R$
+                if (priceNumbers.length === 0) {
+                    for (let c = 0; c < nameColIdx; c++) {
+                        const fmtVal = String(rFmt[c] || '');
+                        if (fmtVal.includes(',') || fmtVal.includes('R$')) {
+                            const num = parseSmartNumber(rRaw[c], fmtVal);
+                            if (!isNaN(num) && num > 0) priceNumbers.push(num);
+                        }
+                    }
+                }
+
+                const calc = computePricesFromNumbers(priceNumbers, appData.cardMode);
+
+                results.push({
+                    code: codesFound[0],
+                    allCodes: codesFound,
+                    rawCode: rawCodeDisplay || codesFound[0],
+                    barcode: barcodeDisplay || '',
+                    name: bestName,
+                    priceCash: calc.priceCash,
+                    priceCardTotal: calc.priceCardTotal,
+                    priceCardInstallment: calc.priceCardInstallment,
+                    rawPrices: priceNumbers,
+                    type: type
+                });
+            }
+
+            return results;
+        }
+
+        function renderPricePreview() {
+            const container = document.getElementById('price-preview-list');
+            if (!container) return;
+
+            const db = appData.db || [];
+            if (db.length === 0) {
+                container.innerHTML = `<div class="p-4 rounded-xl bg-slate-900/50 text-slate-500 text-center">Importe uma planilha acima para visualizar a prévia dos preços extraídos.</div>`;
+                return;
+            }
+
+            // Pega até 4 exemplos (priorizando quem tem preço > 0)
+            const samples = db.filter(x => x.priceCash > 0).slice(0, 4);
+            const listToShow = samples.length > 0 ? samples : db.slice(0, 4);
+
+            container.innerHTML = listToShow.map(item => {
+                let badgeColor = 'bg-blue-600 text-white';
+                let badgeLabel = 'Azul';
+                if (item.type === 'promo') { badgeColor = 'bg-emerald-600 text-white'; badgeLabel = 'Verde'; }
+                if (item.type === 'especial') { badgeColor = 'bg-purple-600 text-white'; badgeLabel = 'Roxa'; }
+
+                return `
+                    <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${badgeColor}">${badgeLabel}</span>
+                                <span class="font-mono text-[11px] text-brand-orange font-bold">Cód: ${item.rawCode}</span>
+                            </div>
+                            <p class="font-bold text-white truncate mt-0.5">${item.name}</p>
+                        </div>
+                        <div class="flex items-center gap-3 shrink-0 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                            <div>
+                                <span class="text-[9px] text-emerald-400 uppercase font-bold block">À Vista PIX</span>
+                                <span class="font-black text-emerald-300 text-xs">${formatCurrency(item.priceCash)}</span>
+                            </div>
+                            <div class="border-l border-slate-800 pl-3">
+                                <span class="text-[9px] text-blue-400 uppercase font-bold block">Cartão 1+5x</span>
+                                <span class="font-black text-blue-300 text-xs">6x ${formatCurrency(item.priceCardInstallment)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        /* =========================================================================
+           BUSCA, SUGESTÕES E EXIBIÇÃO DO PRODUTO
+           ========================================================================= */
+        function clearSearchInput() {
+            const input = document.getElementById('search-input');
+            input.value = '';
+            document.getElementById('search-suggestions').classList.add('hidden');
+            input.focus();
+        }
+
+        function handleLiveSuggestions(query) {
+            const box = document.getElementById('search-suggestions');
+            const trimmed = query.trim();
+            if (!trimmed || trimmed.length < 2 || !appData.db || appData.db.length === 0) {
+                box.classList.add('hidden');
+                return;
+            }
+
+            const normQuery = normalizeCode(trimmed);
+            const upperQuery = trimmed.toUpperCase();
+
+            const matches = appData.db.filter(p => {
+                const codeMatch = (p.allCodes || [p.code]).some(c => c.includes(normQuery));
+                const nameMatch = p.name.toUpperCase().includes(upperQuery);
+                return codeMatch || nameMatch;
+            }).slice(0, 6);
+
+            if (matches.length === 0) {
+                box.classList.add('hidden');
+                return;
+            }
+
+            box.innerHTML = matches.map(p => {
+                let dotColor = 'bg-blue-500';
+                if (p.type === 'promo') dotColor = 'bg-emerald-500';
+                if (p.type === 'especial') dotColor = 'bg-purple-500';
+
+                return `
+                    <button type="button" onclick="selectSuggestedProduct('${p.code}', '${p.type}')" class="w-full px-3.5 py-2.5 text-left hover:bg-slate-800 flex items-center justify-between gap-2 transition">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full ${dotColor}"></span>
+                                <span class="font-mono text-xs font-black text-brand-orange">${p.rawCode}</span>
+                                <span class="text-xs font-bold text-white truncate">${p.name}</span>
+                            </div>
+                        </div>
+                        <span class="text-xs font-black text-emerald-400 shrink-0">${formatCurrency(p.priceCash)}</span>
+                    </button>
+                `;
+            }).join('');
+            box.classList.remove('hidden');
+        }
+
+        function selectSuggestedProduct(code, type) {
+            document.getElementById('search-suggestions').classList.add('hidden');
+            const found = appData.db.find(p => p.code === code && p.type === type) || appData.db.find(p => p.code === code);
+            if (found) {
+                currentProduct = found;
+                document.getElementById('search-input').value = found.rawCode;
+                renderProductCard(found);
+            }
+        }
+
+        function handleSearch(e) {
+            if (e) e.preventDefault();
+            document.getElementById('search-suggestions').classList.add('hidden');
+            const input = document.getElementById('search-input').value.trim();
+            if (!input) return;
+            performSearch(input);
+        }
+
+        function performSearch(rawQuery) {
+            if (isScannerActive) toggleScanner();
+
+            const normQuery = normalizeCode(rawQuery);
+            const upperQuery = rawQuery.toUpperCase();
+
+            // Prioriza promoções especiais/verdes caso o mesmo produto exista na planilha normal e na promocional
+            const typePriority = { 'especial': 1, 'promo': 2, 'normal': 3 };
+            const sortedDB = [...(appData.db || [])].sort((a, b) => (typePriority[a.type] || 9) - (typePriority[b.type] || 9));
+
+            // 1. Busca exata por código ou código de barras (ignorando pontos e zeros à esquerda)
+            let found = sortedDB.find(p => (p.allCodes || [p.code]).includes(normQuery));
+
+            // 2. Fallback por nome ou parte do código
+            if (!found) {
+                found = sortedDB.find(p => 
+                    (p.allCodes || [p.code]).some(c => c.endsWith(normQuery)) ||
+                    p.name.toUpperCase().includes(upperQuery)
+                );
+            }
+
+            const display = document.getElementById('product-display');
+            const noMsg = document.getElementById('no-product-msg');
+
+            if (found) {
+                currentProduct = found;
+                renderProductCard(found);
+                display.classList.remove('hidden');
+                noMsg.classList.add('hidden');
+            } else {
+                currentProduct = null;
+                display.classList.add('hidden');
+                noMsg.classList.remove('hidden');
+                showToast("Produto não encontrado na base.", "error");
+            }
+        }
+
+        function renderProductCard(prod) {
+            document.getElementById('prod-code-badge').innerText = `CÓD: ${prod.rawCode || prod.code}`;
+            
+            const eanBadge = document.getElementById('prod-ean-badge');
+            if (prod.barcode) {
+                eanBadge.innerText = `EAN: ${prod.barcode}`;
+                eanBadge.classList.remove('hidden');
+            } else {
+                eanBadge.classList.add('hidden');
+            }
+
+            document.getElementById('prod-name').innerText = prod.name;
+
+            // Preços
+            const cash = parseFloat(prod.priceCash) || 0;
+            const cardTotal = parseFloat(prod.priceCardTotal) || cash;
+            const cardInst = parseFloat(prod.priceCardInstallment) || (cardTotal / 6);
+
+            document.getElementById('prod-price-pix').innerText = formatCurrency(cash);
+            document.getElementById('prod-price-installment-highlight').innerText = `1+5x ${formatCurrency(cardInst)}`;
+            document.getElementById('prod-price-card-total').innerText = formatCurrency(cardTotal);
+
+            // Tarja e Avisos de Etiqueta 48
+            const cardBorder = document.getElementById('product-card-border');
+            const tarjaBadge = document.getElementById('prod-tarja-badge');
+            const warnVerde = document.getElementById('promo-warning-verde');
+            const warnRoxa = document.getElementById('promo-warning-roxa');
+
+            warnVerde.classList.add('hidden');
+            warnRoxa.classList.add('hidden');
+
+            if (prod.type === 'promo') {
+                cardBorder.className = "bg-brand-light rounded-2xl p-5 shadow-2xl border-2 border-emerald-500 flex flex-col gap-4 relative overflow-hidden";
+                tarjaBadge.className = "px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500 text-slate-950";
+                tarjaBadge.innerHTML = `<i class="fa-solid fa-tag mr-1"></i> Promoção (Tarja Verde)`;
+                warnVerde.classList.remove('hidden');
+            } else if (prod.type === 'especial') {
+                cardBorder.className = "bg-brand-light rounded-2xl p-5 shadow-2xl border-2 border-purple-500 flex flex-col gap-4 relative overflow-hidden";
+                tarjaBadge.className = "px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-purple-500 text-white";
+                tarjaBadge.innerHTML = `<i class="fa-solid fa-star mr-1"></i> Promoção Especial (Tarja Roxa)`;
+                warnRoxa.classList.remove('hidden');
+            } else {
+                cardBorder.className = "bg-brand-light rounded-2xl p-5 shadow-2xl border-2 border-blue-500/70 flex flex-col gap-4 relative overflow-hidden";
+                tarjaBadge.className = "px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-blue-600 text-white";
+                tarjaBadge.innerHTML = `Fora da Promoção (Tarja Azul)`;
+            }
+        }
+
+        function markCorrect() {
+            if (!currentProduct) return;
+            playTone(880, 0.12);
+            showToast(`"${currentProduct.rawCode}" conferido: Preço OK!`, "success");
+            resetSearch();
+        }
+
+        function resetSearch() {
+            currentProduct = null;
+            document.getElementById('product-display').classList.add('hidden');
+            const input = document.getElementById('search-input');
+            input.value = '';
+            input.focus();
+        }
+
+        /* =========================================================================
+           REGISTRO DE ETIQUETAS ERRADAS E LOCALIZAÇÃO
+           ========================================================================= */
+        function openLocationModal() {
+            if (!currentProduct) return;
+            document.getElementById('modal-location').classList.remove('hidden');
+            document.getElementById('custom-location').value = '';
+        }
+
+        function closeLocationModal() {
+            document.getElementById('modal-location').classList.add('hidden');
+        }
+
+        function selectLocation(loc) {
+            document.getElementById('custom-location').value = loc;
+            confirmLocation();
+        }
+
+        function confirmLocation() {
+            if (!currentProduct) return;
+            const loc = document.getElementById('custom-location').value.trim() || 'Local não especificado';
+            
+            if (!appData.divergences) appData.divergences = [];
+
+            appData.divergences.unshift({
+                id: Date.now(),
+                code: currentProduct.rawCode || currentProduct.code,
+                barcode: currentProduct.barcode || '',
+                name: currentProduct.name,
+                priceCash: currentProduct.priceCash,
+                priceCardInstallment: currentProduct.priceCardInstallment,
+                priceCardTotal: currentProduct.priceCardTotal,
+                type: currentProduct.type,
+                location: loc,
+                date: new Date().toISOString()
+            });
+
+            saveData();
+            closeLocationModal();
+            playTone(320, 0.2);
+            showToast("Adicionado à lista de troca de etiquetas!", "warning");
+            resetSearch();
+        }
+
+        function removeDivergenceItem(id) {
+            appData.divergences = (appData.divergences || []).filter(d => d.id !== id);
+            saveData();
+            showToast("Etiqueta marcada como trocada/resolvida!", "success");
+        }
+
+        function renderDivergences() {
+            const container = document.getElementById('divergences-list');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            const list = appData.divergences || [];
+            if (list.length === 0) return;
+
+            container.innerHTML = list.map(div => {
+                const d = new Date(div.date);
+                const dateStr = `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}`;
+                
+                let tarjaPill = `<span class="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">Tarja Azul (Normal)</span>`;
+                let etiquetaInstruction = '';
+
+                if (div.type === 'promo') {
+                    tarjaPill = `<span class="bg-emerald-500 text-slate-950 px-2 py-0.5 rounded text-[10px] font-black uppercase">Tarja Verde (Promoção)</span>`;
+                    etiquetaInstruction = `
+                        <div class="mt-2 p-2 rounded-lg bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-black text-emerald-300 uppercase">
+                            <i class="fa-solid fa-tag mr-1"></i> (COLOCAR ETIQUETA PROMOÇÃO BRANCA (ETIQUETA 48) JUNTO DO CARD (se houver))
+                        </div>
+                    `;
+                } else if (div.type === 'especial') {
+                    tarjaPill = `<span class="bg-purple-500 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">Tarja Roxa (Especial)</span>`;
+                    etiquetaInstruction = `
+                        <div class="mt-2 p-2 rounded-lg bg-purple-950/80 border border-purple-500/50 text-[11px] font-black text-purple-300 uppercase">
+                            <i class="fa-solid fa-star mr-1"></i> (COLOCAR ETIQUETA PROMOÇÃO VERDE (ETIQUETA 48) JUNTO DO CARD (se houver))
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="bg-brand-light border border-slate-700 rounded-2xl p-4 shadow-lg relative overflow-hidden">
+                        <div class="flex justify-between items-start gap-2 mb-2">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-mono text-xs font-black text-brand-orange bg-slate-900 px-2 py-0.5 rounded border border-slate-700">CÓD: ${div.code}</span>
+                                ${tarjaPill}
+                            </div>
+                            <button onclick="removeDivergenceItem(${div.id})" title="Marcar etiqueta como trocada" class="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-extrabold transition flex items-center gap-1">
+                                <i class="fa-solid fa-check"></i> Feito
+                            </button>
+                        </div>
+
+                        <h4 class="font-black text-sm text-white leading-snug mb-2">${div.name}</h4>
+
+                        <div class="grid grid-cols-2 gap-2 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 text-xs">
+                            <div>
+                                <span class="text-[10px] text-emerald-400 font-bold uppercase block">À Vista PIX</span>
+                                <span class="font-black text-white text-sm">${formatCurrency(div.priceCash)}</span>
+                            </div>
+                            <div class="border-l border-slate-800 pl-2.5">
+                                <span class="text-[10px] text-blue-400 font-bold uppercase block">Cartão 1 + 5x</span>
+                                <span class="font-black text-white text-sm">1+5x ${formatCurrency(div.priceCardInstallment)}</span>
+                                <span class="text-[10px] text-slate-400 block">Total: ${formatCurrency(div.priceCardTotal)}</span>
+                            </div>
+                        </div>
+
+                        ${etiquetaInstruction}
+
+                        <div class="mt-2.5 flex items-center justify-between text-xs pt-2 border-t border-slate-800">
+                            <span class="font-extrabold text-rose-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-location-dot"></i> ${div.location}
+                            </span>
+                            <span class="text-[10px] text-slate-500">${dateStr}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function copyDivergencesText() {
+            const list = appData.divergences || [];
+            if (list.length === 0) {
+                showToast("Nenhuma etiqueta pendente para copiar.", "info");
+                return;
+            }
+
+            const lines = list.map((d, i) => {
+                const tipoStr = d.type === 'promo' ? 'TARJA VERDE (Etiqueta 48 Branca)' : (d.type === 'especial' ? 'TARJA ROXA (Etiqueta 48 Verde)' : 'TARJA AZUL (Normal)');
+                return `${i + 1}. CÓD: ${d.code} - ${d.name}\n   À Vista: ${formatCurrency(d.priceCash)} | 1+5x: ${formatCurrency(d.priceCardInstallment)} (Total: ${formatCurrency(d.priceCardTotal)})\n   Status: ${tipoStr}\n   Local: ${d.location}`;
+            });
+
+            const text = `LISTA DE TROCA DE ETIQUETAS (${list.length} itens)\n\n` + lines.join('\n\n');
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast("Lista copiada para a área de transferência!", "success");
+        }
+
+        function exportCSV() {
+            const list = appData.divergences || [];
+            if (list.length === 0) {
+                showToast("Nada para exportar.", "info");
+                return;
+            }
+            
+            let csv = "\uFEFFDATA;CODIGO;PRODUTO;PRECO_AVISTA_PIX;PARCELA_1_MAIS_5X;TOTAL_CARTAO;TARJA;LOCALIZACAO\n";
+            list.forEach(div => {
+                const dateStr = new Date(div.date).toLocaleString('pt-BR');
+                const pName = `"${String(div.name).replace(/"/g, '""')}"`;
+                csv += `${dateStr};${div.code};${pName};${formatCurrency(div.priceCash)};${formatCurrency(div.priceCardInstallment)};${formatCurrency(div.priceCardTotal)};${div.type.toUpperCase()};"${div.location}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `Etiquetas_Erradas_${new Date().toISOString().substring(0,10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function clearDivergences() {
+            openClearModal('divergences');
+        }
+
+        /* =========================================================================
+           MODAL DE LIMPEZA (SEM USAR CONFIRM NATIVO)
+           ========================================================================= */
+        function openClearModal(scope) {
+            const modal = document.getElementById('modal-clear-confirm');
+            const title = document.getElementById('clear-modal-title');
+            const desc = document.getElementById('clear-modal-desc');
+            const btn = document.getElementById('clear-modal-confirm-btn');
+
+            modal.classList.remove('hidden');
+
+            if (scope === 'divergences') {
+                title.innerText = "Limpar Lista de Etiquetas?";
+                desc.innerText = "Todas as divergências registradas nesta lista serão removidas.";
+                btn.onclick = () => {
+                    appData.divergences = [];
+                    saveData();
+                    closeClearModal();
+                    showToast("Lista de etiquetas limpa!", "success");
+                };
+            } else if (scope === 'local') {
+                title.innerText = "Apagar Base Local?";
+                desc.innerText = "Remove todos os produtos e divergências salvos neste aparelho.";
+                btn.onclick = () => {
+                    appData.db = [];
+                    appData.divergences = [];
+                    appData.lastUpdate = null;
+                    saveData();
+                    renderPricePreview();
+                    closeClearModal();
+                    showToast("Base local zerada!", "success");
+                };
+            } else if (scope === 'both') {
+                title.innerText = "Zerar Tudo (Local + GitHub)?";
+                desc.innerText = "Apaga todos os produtos localmente e também envia a base vazia para o repositório do GitHub.";
+                btn.onclick = async () => {
+                    appData.db = [];
+                    appData.divergences = [];
+                    appData.lastUpdate = new Date().toISOString();
+                    saveData();
+                    renderPricePreview();
+                    closeClearModal();
+                    await syncToGitHub();
+                };
+            }
+        }
+
+        function closeClearModal() {
+            document.getElementById('modal-clear-confirm').classList.add('hidden');
+        }
+
+        /* =========================================================================
+           INTEGRAÇÃO GITHUB REST API
+           ========================================================================= */
+        function openGitHubModal() {
+            document.getElementById('modal-github').classList.remove('hidden');
+            document.getElementById('gh-token').value = ghSettings.token || '';
+            document.getElementById('gh-owner').value = ghSettings.owner || '';
+            document.getElementById('gh-repo').value = ghSettings.repo || '';
+        }
+
+        function closeGitHubModal() {
+            document.getElementById('modal-github').classList.add('hidden');
+        }
+
+        function saveGitHubSettings() {
+            ghSettings = {
+                token: document.getElementById('gh-token').value.trim(),
+                owner: document.getElementById('gh-owner').value.trim(),
+                repo: document.getElementById('gh-repo').value.trim(),
+                path: 'db_precos.json'
+            };
+            localStorage.setItem('auditor_gh_v2', JSON.stringify(ghSettings));
+            closeGitHubModal();
+            showToast("Configurações do GitHub salvas!", "success");
+        }
+
+        async function syncToGitHub() {
+            if (!ghSettings.token || !ghSettings.owner || !ghSettings.repo) {
+                showToast("Configure o Token, Usuário e Repositório do GitHub primeiro.", "warning");
+                openGitHubModal();
+                return;
+            }
+
+            showToast("Enviando base para o GitHub...", "info");
+            const url = `https://api.github.com/repos/${ghSettings.owner}/${ghSettings.repo}/contents/${ghSettings.path}`;
+            const headers = {
+                'Authorization': `Bearer ${ghSettings.token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+            };
+
+            try {
+                let sha = null;
+                const getRes = await fetch(url, { headers });
+                if (getRes.ok) {
+                    const getData = await getRes.json();
+                    sha = getData.sha;
+                }
+
+                appData.lastUpdate = new Date().toISOString();
+                saveData();
+
+                const jsonStr = JSON.stringify(appData);
+                const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+
+                const payload = {
+                    message: `Atualização de Preços: ${new Date().toLocaleString('pt-BR')}`,
+                    content: b64
+                };
+                if (sha) payload.sha = sha;
+
+                const putRes = await fetch(url, {
+                    method: 'PUT',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+
+                if (putRes.ok) {
+                    showToast("Base salva no GitHub com sucesso!", "success");
+                } else {
+                    const err = await putRes.json();
+                    throw new Error(err.message || "Falha ao gravar no GitHub");
+                }
+            } catch (err) {
+                console.error(err);
+                showToast(`Erro GitHub: ${err.message}`, "error");
+            }
+        }
+
+        async function syncFromGitHub() {
+            if (!ghSettings.owner || !ghSettings.repo) {
+                showToast("Configure o Usuário e Repositório do GitHub primeiro.", "warning");
+                openGitHubModal();
+                return;
+            }
+
+            showToast("Buscando base atualizada no GitHub...", "info");
+            const url = `https://api.github.com/repos/${ghSettings.owner}/${ghSettings.repo}/contents/${ghSettings.path}`;
+            const headers = { 'Accept': 'application/vnd.github.v3+json' };
+            if (ghSettings.token) {
+                headers['Authorization'] = `Bearer ${ghSettings.token}`;
+            }
+
+            try {
+                const res = await fetch(url, { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    const contentClean = (data.content || '').replace(/\s/g, '');
+                    const jsonStr = decodeURIComponent(escape(atob(contentClean)));
+                    const parsed = JSON.parse(jsonStr);
+
+                    if (parsed && Array.isArray(parsed.db)) {
+                        appData = Object.assign(appData, parsed);
+                        saveData();
+                        renderPricePreview();
+                        showToast(`Sincronizado! ${appData.db.length} produtos carregados.`, "success");
+                    } else {
+                        throw new Error("Formato inválido no arquivo do GitHub.");
+                    }
+                } else if (res.status === 404) {
+                    showToast("Arquivo db_precos.json ainda não existe no repositório. Envie uma base primeiro!", "warning");
+                } else {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+            } catch (err) {
+                console.error(err);
+                showToast(`Erro ao baixar: ${err.message}`, "error");
+            }
+        }
+
+        /* =========================================================================
+           LEITOR DE CÓDIGO DE BARRAS (CÂMERA) E SOM
+           ========================================================================= */
+        function playTone(freq = 800, duration = 0.1) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                gain.gain.value = 0.15;
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            } catch (e) {}
+        }
+
+        function toggleScanner() {
+            const container = document.getElementById('reader-container');
+            
+            if (isScannerActive) {
+                if (html5QrcodeScanner) {
+                    html5QrcodeScanner.stop().then(() => {
+                        container.classList.add('hidden');
+                        isScannerActive = false;
+                    }).catch(() => {
+                        container.classList.add('hidden');
+                        isScannerActive = false;
+                    });
+                }
+            } else {
+                container.classList.remove('hidden');
+                if (!html5QrcodeScanner) {
+                    html5QrcodeScanner = new Html5Qrcode("reader");
+                }
+
+                html5QrcodeScanner.start(
+                    { facingMode: "environment" },
+                    { fps: 12, qrbox: { width: 250, height: 130 } },
+                    (decodedText) => {
+                        playTone(920, 0.1);
+                        html5QrcodeScanner.stop().then(() => {
+                            container.classList.add('hidden');
+                            isScannerActive = false;
+                        }).catch(() => {});
+                        
+                        document.getElementById('search-input').value = decodedText;
+                        performSearch(decodedText);
+                    },
+                    () => {}
+                ).then(() => {
+                    isScannerActive = true;
+                }).catch(() => {
+                    showToast("Permissão de câmera negada ou indisponível.", "error");
+                    container.classList.add('hidden');
+                });
+            }
+        }
+    </script>
+</body>
+</html>
