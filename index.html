@@ -113,6 +113,10 @@
                 <button onclick="switchTab('conferencia')" id="tab-btn-conferencia" class="flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-orange text-white shadow-md shadow-orange-500/20">
                     <i class="fa-solid fa-magnifying-glass"></i> Conferir
                 </button>
+                <button onclick="switchTab('contagem')" id="tab-btn-contagem" class="flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-card text-slate-400 hover:text-white border border-slate-800">
+                    <i class="fa-solid fa-list-ol"></i> Contar
+                    <span id="count-badge" class="hidden bg-emerald-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">0</span>
+                </button>
                 <button onclick="switchTab('divergencias')" id="tab-btn-divergencias" class="flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-card text-slate-400 hover:text-white border border-slate-800">
                     <i class="fa-solid fa-tags"></i> Etiquetas Erradas
                     <span id="div-badge" class="hidden bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">0</span>
@@ -136,15 +140,21 @@
             <div class="bg-brand-card rounded-2xl p-4 shadow-xl border border-slate-800">
                 <form onsubmit="handleSearch(event)" class="flex flex-col gap-2">
                     <div class="flex items-center justify-between">
-                        <label for="search-input" class="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                            <i class="fa-solid fa-barcode text-brand-orange"></i> Código, Cód. Barras (EAN) ou Nome
-                        </label>
-                        <span class="text-[10px] text-slate-500 font-mono">Ignora "." (Ex: 146.837 = 146837)</span>
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <label for="search-input" class="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-barcode text-brand-orange"></i> Consulta de produto
+                            </label>
+                            <div class="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                <button type="button" id="price-search-mode-code" onclick="setPriceSearchMode('code')" class="px-2.5 py-1.5 rounded-md bg-brand-orange text-white text-[10px] font-black uppercase">Código</button>
+                                <button type="button" id="price-search-mode-name" onclick="setPriceSearchMode('name')" class="px-2.5 py-1.5 rounded-md text-slate-400 text-[10px] font-black uppercase">Nome</button>
+                            </div>
+                        </div>
+                        <span id="price-search-hint" class="text-[10px] text-slate-500 font-mono">Código numérico · teclado numérico no celular</span>
                     </div>
 
                     <div class="flex gap-2">
                         <div class="relative flex-1">
-                            <input type="text" id="search-input" oninput="onSearchInput(this.value)" inputmode="search" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Bipe ou digite o código..." autocomplete="off" class="w-full bg-slate-950 border-2 border-slate-700 focus:border-brand-orange rounded-xl pl-3.5 pr-9 py-3 text-base font-extrabold text-white placeholder-slate-500 outline-none transition">
+                            <input type="text" id="search-input" oninput="onSearchInput(this.value)" inputmode="numeric" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Bipe ou digite o código..." autocomplete="off" data-search-mode="code" class="w-full bg-slate-950 border-2 border-slate-700 focus:border-brand-orange rounded-xl pl-3.5 pr-9 py-3 text-base font-extrabold text-white placeholder-slate-500 outline-none transition">
                             <button type="button" onclick="clearSearchInput()" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-1">
                                 <i class="fa-solid fa-circle-xmark text-base"></i>
                             </button>
@@ -165,12 +175,14 @@
                 <!-- Quick Autocomplete Suggestions Dropdown -->
                 <div id="search-suggestions" class="hidden mt-2 bg-slate-950 rounded-xl border border-slate-700 divide-y divide-slate-800/80 max-h-64 overflow-y-auto shadow-2xl"></div>
 
+                <!-- Camera Barcode Scanner Mount (moves between modes when needed) -->
+                <div id="conference-scanner-mount">
                 <!-- Camera Barcode Scanner Container -->
                 <div id="reader-container" class="hidden mt-3 rounded-xl overflow-hidden border-2 border-indigo-500/70 bg-slate-950">
                     <div class="bg-slate-900 px-3 py-2 flex items-center justify-between border-b border-slate-800">
                         <span class="text-xs font-bold text-indigo-300 flex items-center gap-2">
                             <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
-                            Aponte para o Código de Barras da Etiqueta
+                            <span id="scanner-title">Aponte para o Código de Barras da Etiqueta</span>
                         </span>
                         <div class="flex items-center gap-2">
                             <label class="cursor-pointer text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded-lg border border-slate-700">
@@ -188,9 +200,10 @@
                         <div id="camera-controls" class="flex flex-wrap items-center gap-3 px-3 pb-2.5">
                             <button type="button" id="btn-torch" class="hidden text-[11px] font-black px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200"><i class="fa-solid fa-bolt mr-1"></i>Lanterna</button>
                             <label id="zoom-wrap" class="hidden flex items-center gap-1.5 text-[11px] font-bold text-slate-300"><i class="fa-solid fa-magnifying-glass-plus"></i><input id="zoom-range" type="range" class="w-28 accent-orange-500"></label>
-                            <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 ml-auto cursor-pointer"><input id="chk-autoscan" type="checkbox" class="accent-orange-500" checked> Reabrir após conferir</label>
+                            <label id="autoscan-wrap" class="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 ml-auto cursor-pointer"><input id="chk-autoscan" type="checkbox" class="accent-orange-500" checked> Reabrir após conferir</label>
                         </div>
                     </div>
+                </div>
                 </div>
             </div>
 
@@ -308,7 +321,89 @@
         </section>
 
         <!-- ========================================== -->
-        <!-- TAB 2: ETIQUETAS ERRADAS (DIVERGÊNCIAS)    -->
+        <!-- TAB 2: CONTAGEM / CATEGORIZAÇÃO             -->
+        <!-- ========================================== -->
+        <section id="tab-contagem" class="hidden space-y-4">
+            <div class="bg-brand-card rounded-2xl p-4 shadow-xl border border-slate-800 space-y-3.5">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 class="text-sm font-black text-white flex items-center gap-2">
+                            <i class="fa-solid fa-list-ol text-emerald-400"></i> Contagem / Categorização
+                        </h2>
+                        <p class="text-[11px] text-slate-400 mt-0.5">Bipe vários produtos sem confirmar o grupo a cada leitura.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="exportCountCSV()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[11px] font-black text-white transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-csv"></i> CSV
+                        </button>
+                        <button type="button" onclick="clearCounting()" class="px-3 py-2 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/60 rounded-xl text-[11px] font-bold text-rose-300 transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-trash"></i> Limpar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/70 border border-emerald-500/20 rounded-2xl p-3.5 space-y-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Contexto ativo</span>
+                        <span id="count-active-group-label" class="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-black uppercase">SEM GRUPO</span>
+                    </div>
+                    <div id="count-group-buttons" class="flex gap-2 overflow-x-auto hide-scroll pb-0.5"></div>
+                    <div class="flex gap-2">
+                        <input type="text" id="new-count-group" placeholder="Novo grupo (ex.: Bebidas)" maxlength="40" class="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-500">
+                        <button type="button" onclick="addCountGroup()" class="px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-black text-xs">
+                            <i class="fa-solid fa-plus"></i> Grupo
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                        <button type="button" id="count-search-mode-code" onclick="setCountSearchMode('code')" class="px-2.5 py-1.5 rounded-md bg-emerald-500 text-slate-950 text-[10px] font-black uppercase">Código</button>
+                        <button type="button" id="count-search-mode-name" onclick="setCountSearchMode('name')" class="px-2.5 py-1.5 rounded-md text-slate-400 text-[10px] font-black uppercase">Nome</button>
+                    </div>
+                    <span id="count-search-hint" class="text-[10px] text-slate-500 font-mono">Código numérico · leitor ou teclado numérico</span>
+                </div>
+
+                <form onsubmit="handleCountEntry(event)" class="flex gap-2">
+                    <div class="relative flex-1">
+                        <input type="text" id="count-search-input" oninput="onCountSearchInput(this.value)" inputmode="numeric" enterkeyhint="done" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" data-search-mode="code" placeholder="Bipe ou digite o código..." class="w-full bg-slate-950 border-2 border-slate-700 focus:border-emerald-500 rounded-xl pl-3.5 pr-9 py-3 text-base font-extrabold text-white placeholder-slate-500 outline-none transition">
+                        <button type="button" onclick="clearCountSearchInput()" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-1">
+                            <i class="fa-solid fa-circle-xmark text-base"></i>
+                        </button>
+                    </div>
+                    <button type="button" onclick="toggleScanner('contagem')" id="btn-count-camera" title="Escanear Código de Barras" class="px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center font-bold shadow-lg shadow-indigo-600/20 transition active:scale-95">
+                        <i class="fa-solid fa-camera text-lg"></i>
+                    </button>
+                    <button type="submit" title="Adicionar produto" class="px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black flex items-center justify-center shadow-lg shadow-emerald-500/20 transition active:scale-95">
+                        <i class="fa-solid fa-plus text-lg"></i>
+                    </button>
+                </form>
+
+                <div id="count-search-suggestions" class="hidden bg-slate-950 rounded-xl border border-slate-700 divide-y divide-slate-800/80 max-h-64 overflow-y-auto shadow-2xl"></div>
+                <div id="count-scanner-mount"></div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-slate-950 rounded-xl border border-slate-800 p-3">
+                        <span class="text-[10px] text-slate-500 uppercase font-black">Itens distintos</span>
+                        <div id="count-distinct" class="text-xl font-black text-white mt-0.5">0</div>
+                    </div>
+                    <div class="bg-slate-950 rounded-xl border border-slate-800 p-3">
+                        <span class="text-[10px] text-slate-500 uppercase font-black">Unidades contadas</span>
+                        <div id="count-total" class="text-xl font-black text-emerald-400 mt-0.5">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="counting-list" class="flex flex-col gap-3"></div>
+            <div id="empty-count-msg" class="bg-brand-card/40 border border-slate-800/80 rounded-2xl text-center py-12 px-4">
+                <i class="fa-solid fa-boxes-stacked text-3xl text-emerald-500/40 mb-3 block"></i>
+                <p class="font-extrabold text-slate-300 text-sm">Nenhum produto contado ainda.</p>
+                <p class="text-xs text-slate-500 mt-1">Selecione o grupo ativo e comece a bipar. O sistema mantém o mesmo contexto até você trocar.</p>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: ETIQUETAS ERRADAS (DIVERGÊNCIAS)    -->
         <!-- ========================================== -->
         <section id="tab-divergencias" class="hidden space-y-4">
             <div class="bg-brand-card p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow-lg">
@@ -570,6 +665,15 @@
         let html5QrcodeScanner = null;
         let priceListDate = null; // data/hora de emissão do relatório de preços (ERP)
 
+        // Estado do modo Contagem/Categorização
+        let countGroups = ['Sem grupo'];
+        let activeCountGroup = 'Sem grupo';
+        let countSearchMode = 'code';
+        let countRecords = [];
+        let priceSearchMode = 'code';
+        let scannerMode = 'conferencia';
+        let scannerButtonId = 'btn-camera';
+
         // --- Initialize ---
         window.addEventListener('DOMContentLoaded', async () => {
             loadLocalData();
@@ -579,6 +683,13 @@
                 if (b) selectProductById(b.dataset.id);
             });
             document.getElementById('chk-autoscan').addEventListener('change', ev => setAutoRescan(ev.target.checked));
+            document.getElementById('new-count-group').addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') { ev.preventDefault(); addCountGroup(); }
+            });
+            setPriceSearchMode('code');
+            setCountSearchMode('code');
+            renderCountGroups();
+            renderCountingList();
             await autoTryFetchGitHubPublicDB();
         });
 
@@ -609,6 +720,21 @@
                 if (sUpd) lastUpdated = sUpd;
                 const sPd = localStorage.getItem('auditor_pro_pricedate');
                 if (sPd) priceListDate = sPd;
+
+                const sGroups = localStorage.getItem('auditor_pro_count_groups');
+                if (sGroups) {
+                    const parsedGroups = JSON.parse(sGroups);
+                    if (Array.isArray(parsedGroups)) {
+                        countGroups = Array.from(new Set(['Sem grupo', ...parsedGroups.map(cleanText).filter(Boolean)]));
+                    }
+                }
+                const sActiveGroup = localStorage.getItem('auditor_pro_count_active_group');
+                if (sActiveGroup && countGroups.includes(sActiveGroup)) activeCountGroup = sActiveGroup;
+                const sCount = localStorage.getItem('auditor_pro_count_records');
+                if (sCount) {
+                    const parsedCount = JSON.parse(sCount);
+                    if (Array.isArray(parsedCount)) countRecords = parsedCount;
+                }
             } catch (e) {
                 console.error("Erro ao carregar storage local:", e);
             }
@@ -622,6 +748,9 @@
             }
             localStorage.setItem('auditor_pro_db', JSON.stringify(db));
             localStorage.setItem('auditor_pro_div', JSON.stringify(divergences));
+            localStorage.setItem('auditor_pro_count_groups', JSON.stringify(countGroups));
+            localStorage.setItem('auditor_pro_count_active_group', activeCountGroup);
+            localStorage.setItem('auditor_pro_count_records', JSON.stringify(countRecords));
             updateUI();
         }
 
@@ -649,10 +778,12 @@
                 emptyMsg.classList.remove('hidden');
             }
             renderDivergences();
+            renderCountGroups();
+            renderCountingList();
         }
 
         function switchTab(tabId) {
-            ['conferencia', 'divergencias', 'base'].forEach(t => {
+            ['conferencia', 'contagem', 'divergencias', 'base'].forEach(t => {
                 document.getElementById(`tab-${t}`).classList.add('hidden');
                 const btn = document.getElementById(`tab-btn-${t}`);
                 btn.className = "flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-card text-slate-400 hover:text-white border border-slate-800";
@@ -662,7 +793,12 @@
             const activeBtn = document.getElementById(`tab-btn-${tabId}`);
             activeBtn.className = "flex-1 py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all bg-brand-orange text-white shadow-md shadow-orange-500/20";
 
-            if (tabId !== 'conferencia') stopScanner();
+            if (scannerState !== 'idle') stopScanner();
+            if (tabId === 'contagem') {
+                document.getElementById('count-search-input').focus();
+                renderCountGroups();
+                renderCountingList();
+            }
         }
 
         function showToast(msg, isError = false) {
@@ -1031,6 +1167,27 @@
         let lastSearchFromScan = false;
         let autoSubmitTimer = null;
 
+        function setPriceSearchMode(mode) {
+            priceSearchMode = mode === 'name' ? 'name' : 'code';
+            const input = document.getElementById('search-input');
+            input.dataset.searchMode = priceSearchMode;
+            input.setAttribute('inputmode', priceSearchMode === 'code' ? 'numeric' : 'search');
+            input.setAttribute('enterkeyhint', 'search');
+            if (priceSearchMode === 'code') {
+                input.value = input.value.replace(/\D/g, '');
+                input.placeholder = 'Bipe ou digite o código...';
+                document.getElementById('price-search-hint').innerText = 'Código numérico · teclado numérico no celular';
+            } else {
+                input.placeholder = 'Digite o nome do produto...';
+                document.getElementById('price-search-hint').innerText = 'Pesquisa opcional por nome';
+            }
+            const codeBtn = document.getElementById('price-search-mode-code');
+            const nameBtn = document.getElementById('price-search-mode-name');
+            codeBtn.className = priceSearchMode === 'code' ? 'px-2.5 py-1.5 rounded-md bg-brand-orange text-white text-[10px] font-black uppercase' : 'px-2.5 py-1.5 rounded-md text-slate-400 text-[10px] font-black uppercase';
+            nameBtn.className = priceSearchMode === 'name' ? 'px-2.5 py-1.5 rounded-md bg-brand-orange text-white text-[10px] font-black uppercase' : 'px-2.5 py-1.5 rounded-md text-slate-400 text-[10px] font-black uppercase';
+            handleLiveSuggestions(input.value);
+        }
+
         function clearSearchInput() {
             const input = document.getElementById('search-input');
             input.value = '';
@@ -1125,6 +1282,12 @@
 
         // Digitação / leitor USB-Bluetooth: ao completar um EAN-13 válido já consulta sozinho
         function onSearchInput(value) {
+            const input = document.getElementById('search-input');
+            if (priceSearchMode === 'code') {
+                const digits = String(value ?? '').replace(/\D/g, '');
+                if (digits !== value) input.value = digits;
+                value = digits;
+            }
             handleLiveSuggestions(value);
             clearTimeout(autoSubmitTimer);
             const v = value.trim();
@@ -1301,6 +1464,18 @@
             if (code === lastAccepted.code && now - lastAccepted.t < 2500) return; // mesma bipada
             lastAccepted = { code, t: now };
 
+            if (scannerMode === 'contagem') {
+                const added = addCountFromQuery(code, { fromScan: true, silent: true });
+                beep(added);
+                if (added) {
+                    const rec = getCountRecord(code, activeCountGroup);
+                    setScanStatus(`Lido: ${code} · ${activeCountGroup} · ${rec ? rec.quantity : 1}x`, 'ok');
+                } else {
+                    setScanStatus(`Lido ${code} — produto não localizado na base.`, 'error');
+                }
+                return;
+            }
+
             document.getElementById('search-input').value = code;
             lastSearchFromScan = true;
             const found = handleSearch(null, { fromScan: true, silent: true });
@@ -1313,14 +1488,13 @@
             }
         }
 
-        async function startScanner() {
+        async function startScanner(mode = scannerMode) {
             if (scannerState !== 'idle') return;
+            prepareScannerMode(mode);
+            scannerButtonId = scannerMode === 'contagem' ? 'btn-count-camera' : 'btn-camera';
             const container = document.getElementById('reader-container');
-            const btn = document.getElementById('btn-camera');
             container.classList.remove('hidden');
-            btn.classList.replace('bg-indigo-600', 'bg-rose-600');
-            btn.classList.replace('hover:bg-indigo-500', 'hover:bg-rose-500');
-            btn.innerHTML = `<i class="fa-solid fa-stop text-lg"></i>`;
+            setScannerButtonVisual(scannerButtonId, true);
             document.getElementById('chk-autoscan').checked = isAutoRescan();
             setScanStatus('Abrindo câmera...');
             scannerState = 'starting';
@@ -1353,6 +1527,7 @@
                 setupCameraControls();
             } catch (err) {
                 scannerState = 'idle';
+                setScannerButtonVisual(scannerButtonId, false);
                 console.warn("Câmera ao vivo indisponível:", err);
                 const msg = String(err && (err.name || err.message || err));
                 let human = "Não consegui abrir a câmera. Use o botão 'Foto' para ler o código.";
@@ -1406,19 +1581,49 @@
             } catch (e) { /* aparelho sem suporte a lanterna/zoom */ }
         }
 
-        function toggleScanner() {
-            if (scannerState === 'idle') startScanner();
-            else stopScanner();
+        function setScannerButtonVisual(buttonId, active) {
+            const btn = document.getElementById(buttonId);
+            if (!btn) return;
+            if (active) {
+                btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+                btn.classList.add('bg-rose-600', 'hover:bg-rose-500');
+                btn.innerHTML = `<i class="fa-solid fa-stop text-lg"></i>`;
+            } else {
+                btn.classList.remove('bg-rose-600', 'hover:bg-rose-500');
+                btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+                btn.innerHTML = `<i class="fa-solid fa-camera text-lg"></i>`;
+            }
+        }
+
+        function prepareScannerMode(mode) {
+            scannerMode = mode === 'contagem' ? 'contagem' : 'conferencia';
+            const mount = document.getElementById(scannerMode === 'contagem' ? 'count-scanner-mount' : 'conference-scanner-mount');
+            const container = document.getElementById('reader-container');
+            if (mount && container && container.parentElement !== mount) mount.appendChild(container);
+            const autoWrap = document.getElementById('autoscan-wrap');
+            if (autoWrap) autoWrap.classList.toggle('hidden', scannerMode === 'contagem');
+            const title = document.getElementById('scanner-title');
+            if (title) title.innerText = scannerMode === 'contagem' ? 'Aponte para o código do produto' : 'Aponte para o Código de Barras da Etiqueta';
+            const status = document.getElementById('scan-status');
+            if (status && scannerMode === 'contagem') status.innerText = 'Modo contínuo: cada leitura soma 1 no grupo ativo';
+        }
+
+        function toggleScanner(mode = null) {
+            if (scannerState === 'idle') {
+                scannerButtonId = mode === 'contagem' ? 'btn-count-camera' : 'btn-camera';
+                startScanner(mode || scannerMode);
+            } else {
+                stopScanner();
+            }
         }
 
         async function stopScanner() {
             const container = document.getElementById('reader-container');
-            const btn = document.getElementById('btn-camera');
             const wasScanning = scannerState === 'scanning';
             container.classList.add('hidden');
-            btn.classList.replace('bg-rose-600', 'bg-indigo-600');
-            btn.classList.replace('hover:bg-rose-500', 'hover:bg-indigo-500');
-            btn.innerHTML = `<i class="fa-solid fa-camera text-lg"></i>`;
+            setScannerButtonVisual(scannerButtonId, false);
+            setScannerButtonVisual('btn-camera', false);
+            setScannerButtonVisual('btn-count-camera', false);
             if (html5QrcodeScanner && (wasScanning || scannerState === 'starting')) {
                 scannerState = 'stopping';
                 try { await html5QrcodeScanner.stop(); } catch (e) {}
@@ -1429,7 +1634,7 @@
 
         // Depois de "Preço correto"/"Preço errado": se o item veio da câmera, já reabre para o próximo
         function maybeRescan() {
-            if (lastSearchFromScan && isAutoRescan() && !document.getElementById('tab-conferencia').classList.contains('hidden')) {
+            if (scannerMode === 'conferencia' && lastSearchFromScan && isAutoRescan() && !document.getElementById('tab-conferencia').classList.contains('hidden')) {
                 // se a etiqueta ainda estiver na frente da câmera, não relê o mesmo item por ~5 s
                 lastAccepted.t = Date.now() + 2500;
                 setTimeout(() => startScanner(), 250);
@@ -1489,16 +1694,335 @@
             await stopScanner();
             try {
                 const text = await decodeImageFile(file);
-                document.getElementById('search-input').value = text;
-                lastSearchFromScan = true;
-                const found = handleSearch(null, { fromScan: true });
-                beep(found);
+                if (scannerMode === 'contagem') {
+                    const added = addCountFromQuery(text, { fromScan: true });
+                    beep(added);
+                    if (added) {
+                        showToast(`Contado em "${activeCountGroup}".`);
+                        startScanner('contagem');
+                    } else {
+                        showToast('Produto não localizado na base.', true);
+                    }
+                } else {
+                    document.getElementById('search-input').value = text;
+                    lastSearchFromScan = true;
+                    const found = handleSearch(null, { fromScan: true });
+                    beep(found);
+                }
             } catch (e) {
                 showToast("Não consegui ler um código nítido na foto. Chegue mais perto e evite reflexo.", true);
                 if (wasScanning) startScanner();
             } finally {
                 input.value = '';
             }
+        }
+
+        // =====================================================
+        // CONTAGEM / CATEGORIZAÇÃO
+        // =====================================================
+        function persistCounting() {
+            try {
+                localStorage.setItem('auditor_pro_count_groups', JSON.stringify(countGroups));
+                localStorage.setItem('auditor_pro_count_active_group', activeCountGroup);
+                localStorage.setItem('auditor_pro_count_records', JSON.stringify(countRecords));
+            } catch (e) {}
+        }
+
+        function setCountSearchMode(mode) {
+            countSearchMode = mode === 'name' ? 'name' : 'code';
+            const input = document.getElementById('count-search-input');
+            input.dataset.searchMode = countSearchMode;
+            input.setAttribute('inputmode', countSearchMode === 'code' ? 'numeric' : 'search');
+            if (countSearchMode === 'code') {
+                input.value = input.value.replace(/\D/g, '');
+                input.placeholder = 'Bipe ou digite o código...';
+                document.getElementById('count-search-hint').innerText = 'Código numérico · leitor ou teclado numérico';
+            } else {
+                input.placeholder = 'Digite o nome do produto...';
+                document.getElementById('count-search-hint').innerText = 'Pesquisa opcional por nome';
+            }
+            const codeBtn = document.getElementById('count-search-mode-code');
+            const nameBtn = document.getElementById('count-search-mode-name');
+            codeBtn.className = countSearchMode === 'code' ? 'px-2.5 py-1.5 rounded-md bg-emerald-500 text-slate-950 text-[10px] font-black uppercase' : 'px-2.5 py-1.5 rounded-md text-slate-400 text-[10px] font-black uppercase';
+            nameBtn.className = countSearchMode === 'name' ? 'px-2.5 py-1.5 rounded-md bg-emerald-500 text-slate-950 text-[10px] font-black uppercase' : 'px-2.5 py-1.5 rounded-md text-slate-400 text-[10px] font-black uppercase';
+            handleCountSuggestions(input.value);
+        }
+
+        function clearCountSearchInput() {
+            const input = document.getElementById('count-search-input');
+            input.value = '';
+            document.getElementById('count-search-suggestions').classList.add('hidden');
+            input.focus();
+        }
+
+        function onCountSearchInput(value) {
+            const input = document.getElementById('count-search-input');
+            if (countSearchMode === 'code') {
+                const digits = String(value ?? '').replace(/\D/g, '');
+                if (digits !== value) input.value = digits;
+                value = digits;
+            }
+            handleCountSuggestions(value);
+        }
+
+        function handleCountSuggestions(query) {
+            const q = cleanText(query);
+            const box = document.getElementById('count-search-suggestions');
+            if (q.length < 2 || !db.length) {
+                box.classList.add('hidden');
+                return;
+            }
+            const results = searchProducts(q, 6);
+            if (!results.length) {
+                box.classList.add('hidden');
+                return;
+            }
+            box.innerHTML = results.map(({ p }) => `
+                <button type="button" onclick="addCountById('${esc(p.id)}')" class="w-full px-3.5 py-3 text-left hover:bg-slate-900 flex items-center justify-between gap-3 transition">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="font-mono text-xs font-black text-emerald-400">${esc(p.originalCode)}</span>
+                            ${p.barcode ? `<span class="font-mono text-[10px] text-slate-400"><i class="fa-solid fa-barcode mr-0.5"></i>${esc(p.barcode)}</span>` : ''}
+                        </div>
+                        <p class="text-xs font-bold text-white truncate">${esc(p.desc)}</p>
+                    </div>
+                    <span class="text-[10px] text-slate-500 font-bold shrink-0">Adicionar</span>
+                </button>`).join('');
+            box.classList.remove('hidden');
+        }
+
+        function setActiveCountGroup(group) {
+            if (!countGroups.includes(group)) return;
+            activeCountGroup = group;
+            persistCounting();
+            renderCountGroups();
+            renderCountingList();
+            showToast(`Grupo ativo: ${group}`);
+        }
+
+        function addCountGroup() {
+            const input = document.getElementById('new-count-group');
+            const name = cleanText(input.value);
+            if (!name) return;
+            const existing = countGroups.find(g => stripAccents(g).toUpperCase() === stripAccents(name).toUpperCase());
+            if (existing) {
+                setActiveCountGroup(existing);
+                input.value = '';
+                return;
+            }
+            countGroups.push(name);
+            activeCountGroup = name;
+            input.value = '';
+            persistCounting();
+            renderCountGroups();
+            renderCountingList();
+            showToast(`Grupo "${name}" criado e ativado.`);
+        }
+
+        function removeCountGroup(group) {
+            if (group === 'Sem grupo') return;
+            const hasItems = countRecords.some(r => r.group === group);
+            if (hasItems) {
+                if (!confirm(`O grupo "${group}" possui itens contados. Remover o grupo e mover esses itens para "Sem grupo"?`)) return;
+                countRecords.forEach(r => {
+                    if (r.group === group) {
+                        const targetKey = `Sem grupo::${r.productId}`;
+                        const existing = countRecords.find(x => x.key === targetKey);
+                        if (existing) {
+                            existing.quantity += Number(r.quantity || 0);
+                        } else {
+                            r.group = 'Sem grupo';
+                            r.key = targetKey;
+                        }
+                    }
+                });
+                const seen = new Map();
+                countRecords = countRecords.filter(r => {
+                    const existing = seen.get(r.key);
+                    if (!existing) { seen.set(r.key, r); return true; }
+                    existing.quantity += Number(r.quantity || 0);
+                    return false;
+                });
+            }
+            countGroups = countGroups.filter(g => g !== group);
+            if (!countGroups.includes('Sem grupo')) countGroups.unshift('Sem grupo');
+            if (activeCountGroup === group) activeCountGroup = 'Sem grupo';
+            persistCounting();
+            renderCountGroups();
+            renderCountingList();
+        }
+
+        function renderCountGroups() {
+            const wrap = document.getElementById('count-group-buttons');
+            if (!wrap) return;
+            wrap.innerHTML = countGroups.map(group => {
+                const active = group === activeCountGroup;
+                const canRemove = group !== 'Sem grupo';
+                return `<div class="flex items-center gap-1 shrink-0">
+                    <button type="button" onclick="setActiveCountGroup(${JSON.stringify(group).replace(/\"/g, '&quot;')})" class="px-3 py-2 rounded-xl border text-[11px] font-black uppercase transition ${active ? 'bg-emerald-500 text-slate-950 border-emerald-400' : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500'}">${esc(group)}</button>
+                    ${canRemove ? `<button type="button" title="Remover grupo" onclick="removeCountGroup(${JSON.stringify(group).replace(/\"/g, '&quot;')})" class="w-7 h-7 rounded-lg bg-slate-900 text-slate-500 hover:text-rose-300 border border-slate-800 flex items-center justify-center"><i class="fa-solid fa-xmark text-[10px]"></i></button>` : ''}
+                </div>`;
+            }).join('');
+            document.getElementById('count-active-group-label').innerText = activeCountGroup.toUpperCase();
+            const badge = document.getElementById('count-badge');
+            const total = countRecords.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+            badge.innerText = total;
+            badge.classList.toggle('hidden', total === 0);
+        }
+
+        function getCountRecord(query, group) {
+            const results = searchProducts(query, 8);
+            const exact = results.find(r => r.score >= 100) || (results.length === 1 ? results[0] : null);
+            if (!exact) return null;
+            const key = `${group}::${exact.p.id}`;
+            return countRecords.find(r => r.key === key) || null;
+        }
+
+        function addCountByProduct(p, opts = {}) {
+            if (!p) return false;
+            const key = `${activeCountGroup}::${p.id}`;
+            const found = countRecords.find(r => r.key === key);
+            if (found) {
+                found.quantity += 1;
+            } else {
+                countRecords.unshift({
+                    key,
+                    group: activeCountGroup,
+                    productId: p.id,
+                    code: p.originalCode,
+                    barcode: p.barcode || '',
+                    desc: p.desc,
+                    quantity: 1
+                });
+            }
+            persistCounting();
+            renderCountGroups();
+            renderCountingList();
+            document.getElementById('count-search-suggestions').classList.add('hidden');
+            document.getElementById('count-search-input').value = '';
+            if (!opts.silent) showToast(`${p.desc} · ${activeCountGroup} +1`);
+            return true;
+        }
+
+        function addCountById(id) {
+            const p = db.find(x => String(x.id) === String(id));
+            if (p) addCountByProduct(p);
+        }
+
+        function addCountFromQuery(query, opts = {}) {
+            const q = cleanText(query);
+            if (!q) return false;
+            const results = searchProducts(q, 8);
+            if (!results.length) return false;
+            const top = results[0];
+            const unambiguous = results.length === 1 || (top.score >= 100 && (!results[1] || results[1].score < 100));
+            if (!unambiguous) {
+                if (!opts.silent) {
+                    document.getElementById('count-search-input').value = q;
+                    renderCountSuggestions(q);
+                    showToast(`${results.length} produtos encontrados — toque no correto.`);
+                }
+                return false;
+            }
+            return addCountByProduct(top.p, opts);
+        }
+
+        function renderCountSuggestions(query) {
+            handleCountSuggestions(query);
+        }
+
+        function handleCountEntry(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const input = document.getElementById('count-search-input');
+            const q = cleanText(input.value);
+            if (!q) return;
+            addCountFromQuery(q);
+        }
+
+        function removeCountRecord(key) {
+            countRecords = countRecords.filter(r => r.key !== key);
+            persistCounting();
+            renderCountGroups();
+            renderCountingList();
+        }
+
+        function changeCountQuantity(key, delta) {
+            const rec = countRecords.find(r => r.key === key);
+            if (!rec) return;
+            rec.quantity = Math.max(1, Number(rec.quantity || 1) + delta);
+            persistCounting();
+            renderCountGroups();
+            renderCountingList();
+        }
+
+        function renderCountingList() {
+            const container = document.getElementById('counting-list');
+            const empty = document.getElementById('empty-count-msg');
+            if (!container || !empty) return;
+            container.innerHTML = '';
+            const sorted = [...countRecords].sort((a, b) => a.group.localeCompare(b.group, 'pt-BR') || a.desc.localeCompare(b.desc, 'pt-BR'));
+            sorted.forEach(r => {
+                container.innerHTML += `
+                    <div class="bg-brand-card border border-slate-800 rounded-2xl p-4 shadow-lg">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <span class="font-mono text-[10px] font-black text-emerald-400 bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-500/20">${esc(r.group)}</span>
+                                    <span class="font-mono text-[10px] text-slate-400 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">CÓD ${esc(r.code)}</span>
+                                    ${r.barcode ? `<span class="font-mono text-[10px] text-slate-500">EAN ${esc(r.barcode)}</span>` : ''}
+                                </div>
+                                <h4 class="text-sm font-black text-white mt-2 leading-snug">${esc(r.desc)}</h4>
+                            </div>
+                            <button type="button" onclick="removeCountRecord(${JSON.stringify(r.key).replace(/\"/g, '&quot;')})" class="w-8 h-8 rounded-lg bg-slate-900 text-slate-500 hover:text-rose-300 border border-slate-800 shrink-0"><i class="fa-solid fa-trash text-xs"></i></button>
+                        </div>
+                        <div class="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-800">
+                            <span class="text-[10px] uppercase tracking-wider text-slate-500 font-black">Quantidade</span>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="changeCountQuantity(${JSON.stringify(r.key).replace(/\"/g, '&quot;')}, -1)" class="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700 text-white font-black">−</button>
+                                <span class="min-w-10 text-center text-lg font-black text-emerald-400 font-mono">${Number(r.quantity || 0)}</span>
+                                <button type="button" onclick="changeCountQuantity(${JSON.stringify(r.key).replace(/\"/g, '&quot;')}, 1)" class="w-8 h-8 rounded-lg bg-emerald-500 text-slate-950 font-black">+</button>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+            empty.classList.toggle('hidden', countRecords.length > 0);
+            const totalDistinct = countRecords.length;
+            const totalUnits = countRecords.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+            document.getElementById('count-distinct').innerText = totalDistinct;
+            document.getElementById('count-total').innerText = totalUnits;
+        }
+
+        function clearCounting() {
+            if (!countRecords.length) return;
+            if (!confirm('Limpar toda a contagem atual? Os grupos serão mantidos.')) return;
+            countRecords = [];
+            persistCounting();
+            renderCountGroups();
+            renderCountingList();
+            showToast('Contagem limpa. Grupos mantidos.');
+        }
+
+        function exportCountCSV() {
+            if (!countRecords.length) {
+                showToast('Nenhuma contagem para exportar.', true);
+                return;
+            }
+            let csv = '\uFEFFGRUPO;CODIGO;COD_BARRAS;PRODUTO;QUANTIDADE\n';
+            const rows = [...countRecords].sort((a, b) => a.group.localeCompare(b.group, 'pt-BR') || a.desc.localeCompare(b.desc, 'pt-BR'));
+            rows.forEach(r => {
+                const group = `"${String(r.group).replace(/"/g, '""')}"`;
+                const desc = `"${String(r.desc).replace(/"/g, '""')}"`;
+                csv += `${group};${r.code};${r.barcode || ''};${desc};${Number(r.quantity || 0)}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Contagem_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            showToast('CSV da contagem exportado.');
         }
 
         // =====================================================
