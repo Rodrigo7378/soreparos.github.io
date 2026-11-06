@@ -753,17 +753,29 @@
         async function writeProductsToIndexedDB(items) {
             const idb = await openProductsDB();
             const safeItems = Array.isArray(items) ? items : [];
-            return new Promise((resolve, reject) => {
+            const BATCH_SIZE = 1000;
+
+            // Limpa a base em uma transação curta.
+            await new Promise((resolve, reject) => {
                 const tx = idb.transaction(PRODUCTS_STORE, 'readwrite');
-                const store = tx.objectStore(PRODUCTS_STORE);
-                store.clear();
-                // Inserção em lote dentro de uma única transação.
-                // IndexedDB persiste objeto por objeto sem serializar toda a base.
-                for (const item of safeItems) store.put(item);
+                tx.objectStore(PRODUCTS_STORE).clear();
                 tx.oncomplete = resolve;
-                tx.onerror = () => reject(tx.error || new Error('Falha ao salvar produtos no IndexedDB.'));
-                tx.onabort = () => reject(tx.error || new Error('Transação IndexedDB abortada.'));
+                tx.onerror = () => reject(tx.error || new Error('Falha ao limpar produtos do IndexedDB.'));
+                tx.onabort = () => reject(tx.error || new Error('Transação de limpeza IndexedDB abortada.'));
             });
+
+            // Grava em lotes para evitar transações gigantes em bases grandes.
+            for (let start = 0; start < safeItems.length; start += BATCH_SIZE) {
+                const batch = safeItems.slice(start, start + BATCH_SIZE);
+                await new Promise((resolve, reject) => {
+                    const tx = idb.transaction(PRODUCTS_STORE, 'readwrite');
+                    const store = tx.objectStore(PRODUCTS_STORE);
+                    for (const item of batch) store.put(item);
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error || new Error(`Falha ao salvar lote ${Math.floor(start / BATCH_SIZE) + 1}.`));
+                    tx.onabort = () => reject(tx.error || new Error(`Transação do lote ${Math.floor(start / BATCH_SIZE) + 1} abortada.`));
+                });
+            }
         }
 
         async function clearProductsFromIndexedDB() {
@@ -860,18 +872,23 @@
         }
 
         function saveLocalData(touchTimestamp = true) {
-            if (touchTimestamp) {
-                const now = new Date();
-                lastUpdated = `${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-                localStorage.setItem('auditor_pro_updated', lastUpdated);
+            try {
+                if (touchTimestamp) {
+                    const now = new Date();
+                    lastUpdated = `${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                    localStorage.setItem('auditor_pro_updated', lastUpdated);
+                }
+                localStorage.setItem('auditor_pro_div', JSON.stringify(divergences));
+                localStorage.setItem('auditor_pro_count_groups', JSON.stringify(countGroups));
+                localStorage.setItem('auditor_pro_count_active_group', activeCountGroup);
+                localStorage.setItem('auditor_pro_count_records', JSON.stringify(countRecords));
+            } catch (e) {
+                // O banco de produtos não depende mais do localStorage.
+                console.warn('Falha ao salvar estado leve no localStorage:', e);
             }
-            localStorage.setItem('auditor_pro_div', JSON.stringify(divergences));
-            localStorage.setItem('auditor_pro_count_groups', JSON.stringify(countGroups));
-            localStorage.setItem('auditor_pro_count_active_group', activeCountGroup);
-            localStorage.setItem('auditor_pro_count_records', JSON.stringify(countRecords));
             updateUI();
             // Não bloqueia a interface esperando a gravação do banco.
-            void saveProductsPersistence();
+            return saveProductsPersistence();
         }
 
         function updateUI() {
@@ -1147,39 +1164,72 @@
             const items = [];
             let detectedType = null, emission = null, columns = null, usedHeader = false;
             const seen = new Set();
-            const sheets = workbook.SheetNames.map(name => {
-                const sheet = workbook.Sheets[name];
-                return {
-                    raw: XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null }),
-                    fmt: XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }).map(r => r.map(cleanText))
-                };
-            });
+            const MAX_WARNING_DETAILS = 500;
+            let suppressedWarnings = 0;
 
-            sheets.forEach(s => {
-                detectedType = detectedType || detectSheetType(s.fmt);
-                emission = emission || detectEmission(s.fmt);
-            });
-            const type = detectedType || slotType;
+            const addWarning = msg => {
+                if (warnings.length < MAX_WARNING_DETAILS) warnings.push(msg);
+                else suppressedWarnings++;
+            };
 
-            sheets.forEach(s => {
-                const hdr = findHeaderRow(s.fmt);
-                if (hdr) { usedHeader = true; columns = columns || hdr.names; }
-                for (let r = hdr ? hdr.row + 1 : 0; r < s.fmt.length; r++) {
-                    const rowFmt = s.fmt[r] || [], rowRaw = s.raw[r] || [];
+            // Processa uma planilha por vez. A versão anterior mantinha `raw` e `fmt`
+            // completos de TODAS as abas simultaneamente, duplicando o uso de memória.
+            for (const sheetName of workbook.SheetNames) {
+                const sheet = workbook.Sheets[sheetName];
+                const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
+                if (!rawRows.length) continue;
+
+                // Só materializa as primeiras linhas para descobrir cabeçalho, tipo e emissão.
+                const headFmt = rawRows.slice(0, 40).map(row => (row || []).map(cleanText));
+                detectedType = detectedType || detectSheetType(headFmt);
+                emission = emission || detectEmission(headFmt);
+
+                const hdr = findHeaderRow(headFmt);
+                if (hdr) {
+                    usedHeader = true;
+                    columns = columns || hdr.names;
+                }
+
+                const type = detectedType || slotType;
+                const firstDataRow = hdr ? hdr.row + 1 : 0;
+
+                for (let r = firstDataRow; r < rawRows.length; r++) {
+                    const rowRaw = rawRows[r] || [];
+                    const rowFmt = rowRaw.map(cleanText);
                     const it = hdr ? rowFromMap(rowFmt, rowRaw, hdr.map) : rowHeuristic(rowFmt, rowRaw);
                     if (!it) continue;
-                    if (seen.has(it.searchCode)) { warnings.push(`Código repetido na planilha, mantida a 1ª linha: ${it.originalCode}`); continue; }
+
+                    if (seen.has(it.searchCode)) {
+                        addWarning(`Código repetido na planilha, mantida a 1ª linha: ${it.originalCode}`);
+                        continue;
+                    }
+
                     seen.add(it.searchCode);
                     it.type = type;
                     it.id = `${type}_${it.searchCode}`;
-                    if (!it.barcode) warnings.push(`${it.originalCode} · ${it.desc}: sem código de barras na planilha`);
-                    else if (/^\d+$/.test(it.barcode) && [8, 12, 13, 14].includes(it.barcode.length) && !isValidGtin(it.barcode)) warnings.push(`${it.originalCode} · ${it.desc}: código de barras ${it.barcode} com dígito verificador inválido`);
-                    if (it.priceCardTotal < it.pricePix) warnings.push(`${it.originalCode} · ${it.desc}: cartão (${formatBRL(it.priceCardTotal)}) menor que à vista (${formatBRL(it.pricePix)})`);
+
+                    if (!it.barcode) {
+                        addWarning(`${it.originalCode} · ${it.desc}: sem código de barras na planilha`);
+                    } else if (/^\d+$/.test(it.barcode) && [8, 12, 13, 14].includes(it.barcode.length) && !isValidGtin(it.barcode)) {
+                        addWarning(`${it.originalCode} · ${it.desc}: código de barras ${it.barcode} com dígito verificador inválido`);
+                    }
+
+                    if (it.priceCardTotal < it.pricePix) {
+                        addWarning(`${it.originalCode} · ${it.desc}: cartão (${formatBRL(it.priceCardTotal)}) menor que à vista (${formatBRL(it.pricePix)})`);
+                    }
+
                     items.push(it);
                 }
-            });
-            if (!usedHeader) warnings.unshift('Cabeçalho da planilha não reconhecido — usei leitura automática por padrão de valores. Confira a amostra.');
-            return { items, warnings, type, detectedType, emission, columns, usedHeader };
+            }
+
+            if (!usedHeader) {
+                warnings.unshift('Cabeçalho da planilha não reconhecido — usei leitura automática por padrão de valores. Confira a amostra.');
+            }
+            if (suppressedWarnings > 0) {
+                warnings.push(`Mais ${suppressedWarnings.toLocaleString('pt-BR')} avisos foram omitidos da memória para manter a importação leve.`);
+            }
+
+            return { items, warnings, type: detectedType || slotType, detectedType, emission, columns, usedHeader };
         }
         // <PARSER-END>
 
@@ -1194,7 +1244,7 @@
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
-                    const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                    const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array', dense: true });
                     const res = extractProducts(workbook, slotType);
 
                     if (res.items.length === 0) {
@@ -1213,7 +1263,8 @@
 
                     // Substitui os itens anteriores do mesmo tipo
                     db = dedupeDb(db.filter(item => item.type !== res.type).concat(res.items));
-                    saveLocalData(true);
+                    const persisted = await saveLocalData(true);
+                    if (!persisted) throw new Error('Não foi possível gravar a base local. Verifique se o IndexedDB está habilitado e se há espaço disponível.');
                     if (res.emission) {
                         priceListDate = res.emission;
                         localStorage.setItem('auditor_pro_pricedate', priceListDate);
@@ -1228,8 +1279,9 @@
                     }
                 } catch (err) {
                     console.error("Erro na importação:", err);
+                    const detail = err && err.message ? `: ${err.message}` : '';
                     labelEl.innerHTML = `<span class="text-rose-400 font-bold">Erro ao processar arquivo</span>`;
-                    showToast("Falha ao ler a planilha. Verifique o formato.", true);
+                    showToast(`Falha ao processar a planilha${detail}`, true);
                 } finally {
                     input.value = '';
                 }
