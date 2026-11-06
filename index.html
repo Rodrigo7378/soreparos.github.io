@@ -676,7 +676,7 @@
 
         // --- Initialize ---
         window.addEventListener('DOMContentLoaded', async () => {
-            loadLocalData();
+            await loadLocalData();
             updateUI();
             document.getElementById('search-suggestions').addEventListener('click', ev => {
                 const b = ev.target.closest('.suggestion-item');
@@ -710,10 +710,110 @@
             return dedupeDb(ok);
         }
 
-        function loadLocalData() {
+        // =====================================================
+        // PERSISTÊNCIA ROBUSTA
+        // O banco de produtos fica no IndexedDB em vez de um único
+        // JSON no localStorage. Isso evita QuotaExceededError em bases
+        // grandes e mantém a mesma API em memória (`db`).
+        // =====================================================
+        const PRODUCTS_DB_NAME = 'auditor_pro_storage';
+        const PRODUCTS_STORE = 'products';
+        let productsDbPromise = null;
+
+        function openProductsDB() {
+            if (productsDbPromise) return productsDbPromise;
+            productsDbPromise = new Promise((resolve, reject) => {
+                if (!('indexedDB' in window)) {
+                    reject(new Error('IndexedDB não disponível neste navegador.'));
+                    return;
+                }
+                const req = indexedDB.open(PRODUCTS_DB_NAME, 1);
+                req.onupgradeneeded = () => {
+                    const idb = req.result;
+                    if (!idb.objectStoreNames.contains(PRODUCTS_STORE)) {
+                        idb.createObjectStore(PRODUCTS_STORE, { keyPath: 'id' });
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error || new Error('Falha ao abrir IndexedDB.'));
+            });
+            return productsDbPromise;
+        }
+
+        async function readProductsFromIndexedDB() {
+            const idb = await openProductsDB();
+            return new Promise((resolve, reject) => {
+                const tx = idb.transaction(PRODUCTS_STORE, 'readonly');
+                const req = tx.objectStore(PRODUCTS_STORE).getAll();
+                req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+                req.onerror = () => reject(req.error || new Error('Falha ao ler produtos do IndexedDB.'));
+            });
+        }
+
+        async function writeProductsToIndexedDB(items) {
+            const idb = await openProductsDB();
+            const safeItems = Array.isArray(items) ? items : [];
+            return new Promise((resolve, reject) => {
+                const tx = idb.transaction(PRODUCTS_STORE, 'readwrite');
+                const store = tx.objectStore(PRODUCTS_STORE);
+                store.clear();
+                // Inserção em lote dentro de uma única transação.
+                // IndexedDB persiste objeto por objeto sem serializar toda a base.
+                for (const item of safeItems) store.put(item);
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error || new Error('Falha ao salvar produtos no IndexedDB.'));
+                tx.onabort = () => reject(tx.error || new Error('Transação IndexedDB abortada.'));
+            });
+        }
+
+        async function clearProductsFromIndexedDB() {
+            const idb = await openProductsDB();
+            return new Promise((resolve, reject) => {
+                const tx = idb.transaction(PRODUCTS_STORE, 'readwrite');
+                tx.objectStore(PRODUCTS_STORE).clear();
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error || new Error('Falha ao limpar IndexedDB.'));
+                tx.onabort = () => reject(tx.error || new Error('Limpeza IndexedDB abortada.'));
+            });
+        }
+
+        async function migrateLegacyDbToIndexedDB() {
+            const legacy = localStorage.getItem('auditor_pro_db');
+            if (!legacy) return [];
             try {
-                const sDB = localStorage.getItem('auditor_pro_db');
-                if (sDB) db = sanitizeDb(JSON.parse(sDB));
+                const parsed = JSON.parse(legacy);
+                const migrated = sanitizeDb(parsed);
+                await writeProductsToIndexedDB(migrated);
+                // Libera a quota antiga somente depois da migração confirmada.
+                localStorage.removeItem('auditor_pro_db');
+                return migrated;
+            } catch (e) {
+                console.error('Falha ao migrar DB antigo para IndexedDB:', e);
+                return [];
+            }
+        }
+
+        async function loadLocalData() {
+            try {
+                let storedDb = [];
+                try {
+                    storedDb = await readProductsFromIndexedDB();
+                } catch (idbErr) {
+                    console.warn('IndexedDB indisponível, tentando banco legado:', idbErr);
+                }
+
+                if (storedDb.length) {
+                    db = sanitizeDb(storedDb);
+                } else {
+                    db = await migrateLegacyDbToIndexedDB();
+                    if (!db.length) {
+                        const legacy = localStorage.getItem('auditor_pro_db');
+                        if (legacy) {
+                            try { db = sanitizeDb(JSON.parse(legacy)); } catch (e) {}
+                        }
+                    }
+                }
+
                 const sDiv = localStorage.getItem('auditor_pro_div');
                 if (sDiv) divergences = JSON.parse(sDiv);
                 const sUpd = localStorage.getItem('auditor_pro_updated');
@@ -736,7 +836,26 @@
                     if (Array.isArray(parsedCount)) countRecords = parsedCount;
                 }
             } catch (e) {
-                console.error("Erro ao carregar storage local:", e);
+                console.error("Erro ao carregar storage local/IndexedDB:", e);
+            }
+        }
+
+        async function saveProductsPersistence() {
+            try {
+                await writeProductsToIndexedDB(db);
+                return true;
+            } catch (e) {
+                console.error('Erro ao persistir produtos no IndexedDB:', e);
+                // Fallback apenas se o IndexedDB falhar. Pode estourar a quota em DBs enormes,
+                // mas evita perda silenciosa em navegadores sem suporte.
+                try {
+                    localStorage.setItem('auditor_pro_db', JSON.stringify(db));
+                    return true;
+                } catch (fallbackErr) {
+                    console.error('Fallback localStorage também falhou:', fallbackErr);
+                    showToast('Banco muito grande para o armazenamento deste navegador. Use um navegador com IndexedDB habilitado.', true);
+                    return false;
+                }
             }
         }
 
@@ -746,12 +865,13 @@
                 lastUpdated = `${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
                 localStorage.setItem('auditor_pro_updated', lastUpdated);
             }
-            localStorage.setItem('auditor_pro_db', JSON.stringify(db));
             localStorage.setItem('auditor_pro_div', JSON.stringify(divergences));
             localStorage.setItem('auditor_pro_count_groups', JSON.stringify(countGroups));
             localStorage.setItem('auditor_pro_count_active_group', activeCountGroup);
             localStorage.setItem('auditor_pro_count_records', JSON.stringify(countRecords));
             updateUI();
+            // Não bloqueia a interface esperando a gravação do banco.
+            void saveProductsPersistence();
         }
 
         function updateUI() {
@@ -2416,6 +2536,8 @@
         async function confirmClearAllDatabase() {
             db = [];
             divergences = [];
+            try { await clearProductsFromIndexedDB(); } catch (e) { console.error('Erro ao limpar IndexedDB:', e); }
+            try { localStorage.removeItem('auditor_pro_db'); } catch (e) {}
             saveLocalData(true);
             document.getElementById('import-preview-card').classList.add('hidden');
             document.getElementById('label-normal').innerText = "Toque para selecionar a planilha normal";
