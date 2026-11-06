@@ -525,6 +525,9 @@
                     <button onclick="syncFromGitHub(true)" class="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition">
                         <i class="fa-solid fa-cloud-arrow-down"></i> Baixar DB do GitHub
                     </button>
+                    <button onclick="if(confirm('Substituir a base DESTE aparelho pela do GitHub?')) syncFromGitHub(true, true)" class="sm:col-span-2 py-3 px-4 rounded-xl bg-amber-950/60 hover:bg-amber-900 border border-amber-700/60 text-amber-300 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-triangle-exclamation"></i> Forçar baixar (ignora versão)
+                    </button>
                 </div>
 
                 <div class="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row gap-2">
@@ -2459,10 +2462,14 @@
         }
 
         // Só substitui a base local se a remota for realmente mais nova (ou se a local estiver vazia).
-        async function applyRemotePayload(parsed) {
+        let lastRemoteInfo = null;
+        function fmtVer(v) { return v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sem versão'; }
+
+        async function applyRemotePayload(parsed, force = false) {
             if (!parsed || !Array.isArray(parsed.db)) return 'invalid';
             const remoteVersion = Number(parsed.version) || 0;
-            if (db.length > 0 && remoteVersion <= dbVersion) return 'uptodate';
+            lastRemoteInfo = { count: sanitizeDb(parsed.db).length, version: remoteVersion };
+            if (!force && db.length > 0 && remoteVersion <= dbVersion) return 'uptodate';
             db = sanitizeDb(parsed.db);
             divergences = Array.isArray(parsed.divergences) ? parsed.divergences : [];
             lastUpdated = parsed.lastUpdated || lastUpdated;
@@ -2508,7 +2515,7 @@
         }
 
         // manual=true: clique do usuário (sempre dá retorno). manual=false: inicialização (silenciosa).
-        async function syncFromGitHub(manual = false) {
+        async function syncFromGitHub(manual = false, force = false) {
             const cfg = getGitHubConfig();
             if (!cfg.owner || !cfg.repo) {
                 if (manual) openGitHubModal();
@@ -2527,10 +2534,7 @@
 
                 // 1) Verificação barata: o arquivo remoto mudou desde a última sincronização/envio deste aparelho?
                 const remoteSha = await fetchRemoteSha(cfg, headers);
-                if (remoteSha && remoteSha === lsGet(GH_SHA_KEY) && db.length > 0) {
-                    if (manual) showToast("Banco já está atualizado.");
-                    return;
-                }
+                if (!manual && remoteSha && remoteSha === lsGet(GH_SHA_KEY) && db.length > 0) return;
                 if (!remoteSha && !manual) return; // não conseguiu verificar: na abertura, não baixa nada
 
                 // 2) Há algo diferente: baixa e compara a versão
@@ -2548,12 +2552,16 @@
                     const rawRes = await fetch(data.download_url + `?t=${Date.now()}`);
                     jsonStr = await rawRes.text();
                 }
-                const result = await applyRemotePayload(JSON.parse(jsonStr));
+                const result = await applyRemotePayload(JSON.parse(jsonStr), force);
                 const sha = data.sha || remoteSha;
                 if (sha && result !== 'invalid') lsSet(GH_SHA_KEY, sha);
 
                 if (result === 'applied') showToast(manual ? `Sincronizado do GitHub (${db.length} itens)!` : `Banco atualizado (${db.length} itens).`);
-                else if (result === 'uptodate' && manual) showToast("Banco já está atualizado.");
+                else if (result === 'uptodate' && manual) {
+                    const r = lastRemoteInfo || { count: 0, version: 0 };
+                    if (r.count !== db.length) showToast(`Atenção: GitHub tem ${r.count} itens (${fmtVer(r.version)}) e este aparelho ${db.length} (${fmtVer(dbVersion)}). Use "Forçar baixar" para substituir.`, true);
+                    else showToast(`Banco já está atualizado (${db.length} itens).`);
+                }
                 else if (result === 'invalid' && manual) showToast("O db.json do GitHub não tem um formato válido.", true);
             } catch (err) {
                 console.error("Erro ao sincronizar do GitHub:", err);
