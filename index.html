@@ -98,7 +98,7 @@
 
                 <!-- GitHub Cloud Actions -->
                 <div class="flex items-center gap-1.5 shrink-0">
-                    <button onclick="syncFromGitHub(false)" id="btn-quick-sync" title="Baixar ou Enviar para o GitHub" class="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-extrabold flex items-center gap-1.5 transition active:scale-95">
+                    <button onclick="syncFromGitHub(true)" id="btn-quick-sync" title="Baixar ou Enviar para o GitHub" class="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-extrabold flex items-center gap-1.5 transition active:scale-95">
                         <i class="fa-solid fa-cloud-arrow-up"></i>
                         <span class="hidden sm:inline">Sincronizar</span>
                     </button>
@@ -663,6 +663,8 @@
         let lastUpdated = null;
         let currentProduct = null;
         let html5QrcodeScanner = null;
+        let dbVersion = 0; // versão (timestamp) da base local; só sobe em importação/limpeza ou ao aplicar base remota mais nova
+        let syncing = false;
         let priceListDate = null; // data/hora de emissão do relatório de preços (ERP)
 
         // Estado do modo Contagem/Categorização
@@ -675,7 +677,8 @@
         let scannerButtonId = 'btn-camera';
 
         // --- Initialize ---
-        window.addEventListener('DOMContentLoaded', async () => {
+        // Inicialização: 1) abre/carrega o IndexedDB, 2) mostra a interface, 3) só então verifica o GitHub.
+        async function initApp() {
             await loadLocalData();
             updateUI();
             document.getElementById('search-suggestions').addEventListener('click', ev => {
@@ -690,7 +693,12 @@
             setCountSearchMode('code');
             renderCountGroups();
             renderCountingList();
-            await autoTryFetchGitHubPublicDB();
+            // A sincronização remota nunca bloqueia nem substitui a base local sem versão mais nova.
+            try { await autoTryFetchGitHubPublicDB(); } catch (e) { console.warn('Verificação remota falhou:', e); }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initApp().catch(console.error);
         });
 
         // Bases geradas pela versão antiga (sem o campo `ref`) tinham preços lidos errado: descarta.
@@ -832,6 +840,8 @@
                 if (sUpd) lastUpdated = sUpd;
                 const sPd = localStorage.getItem('auditor_pro_pricedate');
                 if (sPd) priceListDate = sPd;
+                const sVer = localStorage.getItem('auditor_pro_dbversion');
+                if (sVer) dbVersion = Number(sVer) || 0;
 
                 const sGroups = localStorage.getItem('auditor_pro_count_groups');
                 if (sGroups) {
@@ -1263,6 +1273,7 @@
 
                     // Substitui os itens anteriores do mesmo tipo
                     db = dedupeDb(db.filter(item => item.type !== res.type).concat(res.items));
+                    bumpDbVersion();
                     const persisted = await saveLocalData(true);
                     if (!persisted) throw new Error('Não foi possível gravar a base local. Verifique se o IndexedDB está habilitado e se há espaço disponível.');
                     if (res.emission) {
@@ -2437,53 +2448,98 @@
             return new TextDecoder().decode(bytes);
         }
 
+        const GH_SHA_KEY = 'auditor_pro_remote_sha';
+
+        function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+        function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+        function bumpDbVersion() {
+            dbVersion = Date.now();
+            lsSet('auditor_pro_dbversion', String(dbVersion));
+        }
+
+        // Só substitui a base local se a remota for realmente mais nova (ou se a local estiver vazia).
+        async function applyRemotePayload(parsed) {
+            if (!parsed || !Array.isArray(parsed.db)) return 'invalid';
+            const remoteVersion = Number(parsed.version) || 0;
+            if (db.length > 0 && remoteVersion <= dbVersion) return 'uptodate';
+            db = sanitizeDb(parsed.db);
+            divergences = Array.isArray(parsed.divergences) ? parsed.divergences : [];
+            lastUpdated = parsed.lastUpdated || lastUpdated;
+            priceListDate = parsed.priceListDate || priceListDate;
+            dbVersion = remoteVersion;
+            lsSet('auditor_pro_dbversion', String(dbVersion));
+            if (lastUpdated) lsSet('auditor_pro_updated', lastUpdated);
+            if (priceListDate) lsSet('auditor_pro_pricedate', priceListDate);
+            await saveLocalData(false);
+            return 'applied';
+        }
+
+        // Consulta leve (listagem da pasta, sem baixar o db.json) para obter o SHA do arquivo remoto.
+        async function fetchRemoteSha(cfg, headers) {
+            const idx = cfg.path.lastIndexOf('/');
+            const dir = idx >= 0 ? cfg.path.slice(0, idx) : '';
+            const name = cfg.path.slice(idx + 1);
+            try {
+                const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${dir}?ref=${encodeURIComponent(cfg.branch)}&t=${Date.now()}`, { headers });
+                if (!res.ok) return null;
+                const list = await res.json();
+                const f = Array.isArray(list) ? list.find(x => x.name === name) : null;
+                return f ? f.sha : null;
+            } catch (e) { return null; }
+        }
+
+        // Inicialização: a base local já foi carregada. Só consulta o GitHub se houver configuração.
         async function autoTryFetchGitHubPublicDB() {
             const cfg = getGitHubConfig();
             if (cfg.owner && cfg.repo) {
-                await syncFromGitHub(true);
-            } else {
-                // Also try relative ./db.json if hosted in same folder
-                try {
-                    const res = await fetch(`./db.json?t=${Date.now()}`);
-                    if (res.ok) {
-                        const payload = await res.json();
-                        if (Array.isArray(payload.db)) {
-                            db = sanitizeDb(payload.db);
-                            divergences = payload.divergences || divergences;
-                            lastUpdated = payload.lastUpdated || lastUpdated;
-                            priceListDate = payload.priceListDate || priceListDate;
-                            try { if (priceListDate) localStorage.setItem('auditor_pro_pricedate', priceListDate); } catch (e) {}
-                            saveLocalData(false);
-                        }
-                    }
-                } catch (e) {}
-            }
-        }
-
-        async function syncFromGitHub(silent = false) {
-            const cfg = getGitHubConfig();
-            if (!cfg.owner || !cfg.repo) {
-                if (!silent) openGitHubModal();
+                await syncFromGitHub(false);
                 return;
             }
+            // Sem GitHub configurado: só tenta ./db.json quando não há nenhuma base local.
+            if (db.length > 0) return;
+            try {
+                const res = await fetch(`./db.json?t=${Date.now()}`);
+                if (res.ok) {
+                    const result = await applyRemotePayload(await res.json());
+                    if (result === 'applied') showToast(`Banco atualizado (${db.length} itens).`);
+                }
+            } catch (e) {}
+        }
+
+        // manual=true: clique do usuário (sempre dá retorno). manual=false: inicialização (silenciosa).
+        async function syncFromGitHub(manual = false) {
+            const cfg = getGitHubConfig();
+            if (!cfg.owner || !cfg.repo) {
+                if (manual) openGitHubModal();
+                return;
+            }
+            if (syncing) return;
+            syncing = true;
 
             const btn = document.getElementById('btn-quick-sync');
             const origHtml = btn.innerHTML;
-            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+            if (manual) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
 
             try {
                 const headers = { 'Accept': 'application/vnd.github.v3+json' };
                 if (cfg.token) headers['Authorization'] = `token ${cfg.token}`;
 
-                const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}?ref=${cfg.branch}&t=${Date.now()}`;
-                const res = await fetch(url, { headers });
-
-                if (!res.ok) {
-                    if (!silent) showToast("Arquivo db.json ainda não encontrado no GitHub. Envie a base primeiro.", true);
-                    btn.innerHTML = origHtml;
+                // 1) Verificação barata: o arquivo remoto mudou desde a última sincronização/envio deste aparelho?
+                const remoteSha = await fetchRemoteSha(cfg, headers);
+                if (remoteSha && remoteSha === lsGet(GH_SHA_KEY) && db.length > 0) {
+                    if (manual) showToast("Banco já está atualizado.");
                     return;
                 }
+                if (!remoteSha && !manual) return; // não conseguiu verificar: na abertura, não baixa nada
 
+                // 2) Há algo diferente: baixa e compara a versão
+                const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}?ref=${encodeURIComponent(cfg.branch)}&t=${Date.now()}`;
+                const res = await fetch(url, { headers });
+                if (!res.ok) {
+                    if (manual) showToast("Arquivo db.json ainda não encontrado no GitHub. Envie a base primeiro.", true);
+                    return;
+                }
                 const data = await res.json();
                 let jsonStr = '';
                 if (data.content) {
@@ -2492,21 +2548,18 @@
                     const rawRes = await fetch(data.download_url + `?t=${Date.now()}`);
                     jsonStr = await rawRes.text();
                 }
+                const result = await applyRemotePayload(JSON.parse(jsonStr));
+                const sha = data.sha || remoteSha;
+                if (sha && result !== 'invalid') lsSet(GH_SHA_KEY, sha);
 
-                const parsed = JSON.parse(jsonStr);
-                if (Array.isArray(parsed.db)) {
-                    db = sanitizeDb(parsed.db);
-                    divergences = Array.isArray(parsed.divergences) ? parsed.divergences : [];
-                    lastUpdated = parsed.lastUpdated || lastUpdated;
-                    priceListDate = parsed.priceListDate || priceListDate;
-                    try { if (priceListDate) localStorage.setItem('auditor_pro_pricedate', priceListDate); } catch (e) {}
-                    saveLocalData(false);
-                    if (!silent) showToast(`Sincronizado do GitHub (${db.length} itens)!`);
-                }
+                if (result === 'applied') showToast(manual ? `Sincronizado do GitHub (${db.length} itens)!` : `Banco atualizado (${db.length} itens).`);
+                else if (result === 'uptodate' && manual) showToast("Banco já está atualizado.");
+                else if (result === 'invalid' && manual) showToast("O db.json do GitHub não tem um formato válido.", true);
             } catch (err) {
                 console.error("Erro ao sincronizar do GitHub:", err);
-                if (!silent) showToast("Erro ao buscar dados do GitHub.", true);
+                if (manual) showToast("Erro ao buscar dados do GitHub.", true);
             } finally {
+                syncing = false;
                 btn.innerHTML = origHtml;
             }
         }
@@ -2543,6 +2596,7 @@
 
                 const payload = {
                     lastUpdated: lastUpdated || new Date().toLocaleString('pt-BR'),
+                    version: dbVersion || (bumpDbVersion(), dbVersion),
                     priceListDate: priceListDate,
                     db: db,
                     divergences: divergences
@@ -2563,6 +2617,7 @@
                 });
 
                 if (putRes.ok) {
+                    try { const pj = await putRes.json(); if (pj && pj.content && pj.content.sha) lsSet(GH_SHA_KEY, pj.content.sha); } catch (e) {}
                     showToast("Banco de dados salvo no GitHub com sucesso!");
                 } else {
                     const errData = await putRes.json();
@@ -2588,6 +2643,7 @@
         async function confirmClearAllDatabase() {
             db = [];
             divergences = [];
+            bumpDbVersion();
             try { await clearProductsFromIndexedDB(); } catch (e) { console.error('Erro ao limpar IndexedDB:', e); }
             try { localStorage.removeItem('auditor_pro_db'); } catch (e) {}
             saveLocalData(true);
